@@ -172,13 +172,20 @@ namespace PhotoSorterAvalonia
                 var currentPosition = e.GetPosition(CurrentImage);
                 var delta = currentPosition - lastMousePosition;
                 
-                // Apply translation
+                // Apply translation with bounds checking
                 if (CurrentImage.RenderTransform is TransformGroup transformGroup)
                 {
                     if (transformGroup.Children[1] is TranslateTransform translateTransform)
                     {
-                        translateTransform.X += delta.X;
-                        translateTransform.Y += delta.Y;
+                        // Calculate new position
+                        double newX = translateTransform.X + delta.X;
+                        double newY = translateTransform.Y + delta.Y;
+                        
+                        // Apply bounds checking
+                        ClampTranslation(ref newX, ref newY);
+                        
+                        translateTransform.X = newX;
+                        translateTransform.Y = newY;
                     }
                 }
                 
@@ -219,6 +226,16 @@ namespace PhotoSorterAvalonia
                 {
                     scaleTransform.ScaleX = currentScale;
                     scaleTransform.ScaleY = currentScale;
+                }
+                
+                // After zooming, clamp translation to keep image in bounds
+                if (transform.Children[1] is TranslateTransform translateTransform)
+                {
+                    double x = translateTransform.X;
+                    double y = translateTransform.Y;
+                    ClampTranslation(ref x, ref y);
+                    translateTransform.X = x;
+                    translateTransform.Y = y;
                 }
             }
         }
@@ -266,6 +283,45 @@ namespace PhotoSorterAvalonia
                 {
                     rotateTransform.Angle = currentRotation;
                 }
+            }
+        }
+        
+        private void ClampTranslation(ref double x, ref double y)
+        {
+            if (CurrentImage.Source == null) return;
+            
+            // Get image dimensions
+            var imageSource = CurrentImage.Source as Bitmap;
+            if (imageSource == null) return;
+            
+            double imageWidth = imageSource.Size.Width * currentScale;
+            double imageHeight = imageSource.Size.Height * currentScale;
+            
+            // Get container dimensions (approximate)
+            double containerWidth = CurrentImage.Bounds.Width;
+            double containerHeight = CurrentImage.Bounds.Height;
+            
+            // If image is smaller than container, center it
+            if (imageWidth <= containerWidth)
+            {
+                x = 0;
+            }
+            else
+            {
+                // Calculate maximum allowed translation
+                double maxX = (imageWidth - containerWidth) / 2;
+                x = Math.Clamp(x, -maxX, maxX);
+            }
+            
+            if (imageHeight <= containerHeight)
+            {
+                y = 0;
+            }
+            else
+            {
+                // Calculate maximum allowed translation
+                double maxY = (imageHeight - containerHeight) / 2;
+                y = Math.Clamp(y, -maxY, maxY);
             }
         }
         
