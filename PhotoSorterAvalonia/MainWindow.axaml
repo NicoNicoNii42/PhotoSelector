@@ -1,0 +1,187 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        x:Class="PhotoSorterAvalonia.MainWindow"
+        Title="Photo Sorter - Avalonia"
+        Width="1400" Height="800">
+    
+    <Grid RowDefinitions="*,Auto" Margin="20" RowSpacing="10">
+        
+        <!-- Photo Display Area -->
+        <Border Grid.Row="0" Background="#2C2C2C" CornerRadius="10" BorderBrush="#404040" BorderThickness="2">
+            <Grid>
+                <!-- Image Display with Zoom/Pan -->
+                <Image x:Name="CurrentImage" 
+                       Stretch="Uniform" 
+                       HorizontalAlignment="Center" 
+                       VerticalAlignment="Center">
+                    <Image.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                            <TranslateTransform X="0" Y="0"/>
+                            <RotateTransform Angle="0"/>
+                        </TransformGroup>
+                    </Image.RenderTransform>
+                </Image>
+                
+                <!-- Zoom & Rotation Controls -->
+                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Spacing="5" 
+                            IsVisible="{Binding #ShowZoomControls.IsChecked}">
+                    <Button Content="+" Width="40" Height="40" FontSize="20" CornerRadius="20"
+                            Click="ZoomIn_Click"/>
+                    <Button Content="−" Width="40" Height="40" FontSize="20" CornerRadius="20"
+                            Click="ZoomOut_Click"/>
+                    <Button Content="⟲" Width="40" Height="40" FontSize="20" CornerRadius="20"
+                            Click="ResetZoom_Click"/>
+                    <Button Content="↻" Width="40" Height="40" FontSize="20" CornerRadius="20"
+                            Click="RotateClockwise_Click"/>
+                    <Button Content="↺" Width="40" Height="40" FontSize="20" CornerRadius="20"
+                            Click="RotateCounterClockwise_Click"/>
+                </StackPanel>
+                
+                <!-- Instructions Overlay -->
+                <Border x:Name="InstructionsOverlay" 
+                        Background="#80000000" 
+                        IsVisible="True"
+                        CornerRadius="10"
+                        Padding="20">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="500" Spacing="20">
+                        <TextBlock Text="📸 Photo Sorter" FontSize="28" FontWeight="Bold" Foreground="White" 
+                                   HorizontalAlignment="Center"/>
+                        
+                        <Border Background="#CC000000" CornerRadius="10" Padding="20">
+                            <StackPanel Spacing="15">
+                                <TextBlock Text="CONTROLS:" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                                
+                                <StackPanel Spacing="10">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Border Background="#333" CornerRadius="5" Padding="10">
+                                            <TextBlock Text="←" FontSize="20" FontWeight="Bold" Foreground="White"/>
+                                        </Border>
+                                        <TextBlock Text="Left click or swipe: Sort out (skip)" 
+                                                   FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Border Background="#333" CornerRadius="5" Padding="10">
+                                            <TextBlock Text="→" FontSize="20" FontWeight="Bold" Foreground="White"/>
+                                        </Border>
+                                        <TextBlock Text="Right click or swipe: Move to 'good' folder" 
+                                                   FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Border Background="#333" CornerRadius="5" Padding="10">
+                                            <TextBlock Text="↑" FontSize="20" FontWeight="Bold" Foreground="White"/>
+                                        </Border>
+                                        <TextBlock Text="Up click or swipe: Move to 'very good' folder" 
+                                                   FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                
+                                <TextBlock Text="KEYBOARD SHORTCUTS:" FontSize="18" FontWeight="Bold" Foreground="White" 
+                                           Margin="0,10,0,0"/>
+                                
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="• Left Arrow: Sort out" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Right Arrow: Good" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Up Arrow: Very Good" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Q: Quit application" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• H: Show/hide instructions" FontSize="14" Foreground="White"/>
+                                </StackPanel>
+                                
+                                <TextBlock Text="ZOOM CONTROLS:" FontSize="18" FontWeight="Bold" Foreground="White" 
+                                           Margin="0,10,0,0"/>
+                                
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="• Mouse wheel: Zoom in/out" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Drag: Pan when zoomed" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Double-click: Reset zoom" FontSize="14" Foreground="White"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        
+                        <Button Content="START SORTING" 
+                                HorizontalAlignment="Center"
+                                Width="200" Height="50" 
+                                FontSize="16" FontWeight="Bold"
+                                CornerRadius="10"
+                                Click="StartSorting_Click"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+        
+        <!-- Bottom Panel with Statistics, Progress, and Action Buttons -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
+            <!-- Statistics -->
+            <Border Grid.Column="0" Background="#3C3C3C" CornerRadius="10" Padding="15">
+                <StackPanel>
+                    <TextBlock Text="STATISTICS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
+                    <TextBlock x:Name="StatsText" Text="Loading..." FontSize="14" Foreground="White" Margin="0,5,0,0"/>
+                </StackPanel>
+            </Border>
+            
+            <!-- Current File -->
+            <Border Grid.Column="1" Background="#3C3C3C" CornerRadius="10" Padding="15">
+                <StackPanel>
+                    <TextBlock Text="CURRENT FILE" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
+                    <TextBlock x:Name="FileText" Text="No file loaded" FontSize="14" Foreground="White" 
+                               Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+            </Border>
+            
+            <!-- Zoom Controls Toggle -->
+            <Border Grid.Column="2" Background="#3C3C3C" CornerRadius="10" Padding="15">
+                <StackPanel>
+                    <TextBlock Text="ZOOM CONTROLS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
+                    <CheckBox x:Name="ShowZoomControls" Content="Show" IsChecked="True" 
+                              Margin="0,5,0,0" Foreground="White"/>
+                </StackPanel>
+            </Border>
+            
+            <!-- Progress -->
+            <Border Grid.Column="3" Background="#3C3C3C" CornerRadius="10" Padding="15">
+                <StackPanel>
+                    <TextBlock Text="PROGRESS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
+                    <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="100" Value="0" 
+                                 Margin="0,5,0,0" Height="10"/>
+                    <TextBlock x:Name="ProgressText" Text="0/0" FontSize="14" Foreground="White" 
+                               HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                </StackPanel>
+            </Border>
+            
+            <!-- Action Buttons -->
+            <Button Grid.Column="4" 
+                    Content="← SORT OUT" 
+                    Background="#666666" Foreground="White"
+                    FontSize="16" FontWeight="Bold"
+                    Height="60" CornerRadius="10"
+                    Click="SortOut_Click"/>
+            
+            <Button Grid.Column="5" 
+                    Content="GOOD →" 
+                    Background="#2E7D32" Foreground="White"
+                    FontSize="16" FontWeight="Bold"
+                    Height="60" CornerRadius="10"
+                    Click="Good_Click"/>
+            
+            <Button Grid.Column="6" 
+                    Content="↑ VERY GOOD" 
+                    Background="#1565C0" Foreground="White"
+                    FontSize="16" FontWeight="Bold"
+                    Height="60" CornerRadius="10"
+                    Click="VeryGood_Click"/>
+            
+            <Button Grid.Column="7" 
+                    Content="QUIT" 
+                    Background="#C62828" Foreground="White"
+                    FontSize="16" FontWeight="Bold"
+                    Height="60" CornerRadius="10"
+                    Click="Quit_Click"/>
+        </Grid>
+    </Grid>
+    
+</Window>
