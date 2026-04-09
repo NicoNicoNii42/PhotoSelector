@@ -15,33 +15,6 @@ using System.Threading.Tasks;
 
 namespace PhotoSorterAvalonia
 {
-    //TODO: cleanup this class into parts
-    //TODO: retain relative zoom across images
-    //TODO: fix portrait images slightly zoomed in
-    //TODO: create script not properly working anymore
-    /// <summary>
-    /// Configuration settings for the Photo Sorter application.
-    /// </summary>
-    public static class AppConfig
-    {
-        public const string SourceFolder = "/Users/niconiconii/Pictures/DCIM/100LEICA";
-        public const string FileExtension = "*.DNG";
-        public const string GoodFolderName = "good";
-        public const string VeryGoodFolderName = "verygood";
-        public const string SortedOutFolderName = "sortedout";
-        
-        public const double MinZoomScale = 0.2;
-        public const double MaxZoomScale = 5.0;
-        public const double ZoomFactor = 1.1;
-        public const double RotationStep = 90.0;
-        public const double DefaultZoomScale = 1.0;
-        public const double DefaultRotation = 0.0;
-        
-        // Cache configuration
-        public const int MaxCacheSize = 20; // Maximum number of images to keep in RAM
-        public const int PreloadRange = 2; // Number of adjacent images to preload
-    }
-
     /// <summary>
     /// Main window for the Photo Sorter application.
     /// Allows sorting photos into three categories using keyboard shortcuts and mouse gestures.
@@ -577,7 +550,7 @@ namespace PhotoSorterAvalonia
                 using var process = System.Diagnostics.Process.Start(startInfo);
                 if (process == null) return 1;
                 
-                process.WaitForExit(2000); // Wait up to 2 seconds
+                process.WaitForExit(AppConfig.ExifToolTimeoutMs); // Wait up to configured timeout
                 
                 if (process.ExitCode == 0)
                 {

@@ -12,7 +12,7 @@ echo "=================================================="
 APP_NAME="Photo Sorter"
 APP_IDENTIFIER="com.niconiconii.PhotoSorter"
 VERSION="1.0.0"
-BUILD_DIR="PhotoSorterAvalonia/bin/Release/net10.0/osx-arm64/publish"
+BUILD_DIR="test-build"  # Updated to match the publish output directory
 APP_BUNDLE_DIR="Photo Sorter.app"
 APP_CONTENTS_DIR="$APP_BUNDLE_DIR/Contents"
 APP_MACOS_DIR="$APP_CONTENTS_DIR/MacOS"
@@ -28,7 +28,7 @@ rm -rf "$BUILD_DIR" "$APP_BUNDLE_DIR" 2>/dev/null || true
 # Build the application for macOS
 echo "🏗️  Building for macOS (Release mode)..."
 cd PhotoSorterAvalonia
-dotnet publish -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+dotnet publish -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output ../test-build
 cd ..
 
 echo "📦 Creating macOS application bundle..."
@@ -63,7 +63,7 @@ cat > "$APP_CONTENTS_DIR/Info.plist" << EOF
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>CFBundleExecutable</key>
-    <string>PhotoSorterAvalonia</string>
+    <string>launch.sh</string>
     <key>CFBundleIconFile</key>
     <string>$APP_ICON</string>
     <key>LSMinimumSystemVersion</key>

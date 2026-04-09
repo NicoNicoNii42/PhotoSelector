@@ -577,6 +577,9 @@ sample-photos/
 # macOS application bundle
 Photo Sorter.app/
 
+# Build output directories
+test-build/
+
 # Generated scripts and installation files
 create-mac-app.sh
 Install Photo Sorter.command
