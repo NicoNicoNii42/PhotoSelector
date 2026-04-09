@@ -15,6 +15,9 @@ using System.Threading.Tasks;
 
 namespace PhotoSorterAvalonia
 {
+    //TODO: cleanup this class into parts
+    //TODO: retain relative zoom across images
+    //TODO: fix portrait images slightly zoomed in
     /// <summary>
     /// Configuration settings for the Photo Sorter application.
     /// </summary>
@@ -62,6 +65,9 @@ namespace PhotoSorterAvalonia
         private Point _lastMousePosition;
         private bool _isDragging;
         
+        // Viewbox for responsive sizing
+        private Viewbox _imageContainer = null!;
+        
         // Persistent statistics
         private StatisticsManager.StatisticsData _persistentStats = null!;
         
@@ -80,6 +86,9 @@ namespace PhotoSorterAvalonia
         public MainWindow()
         {
             InitializeComponent();
+            
+            // Initialize Viewbox reference
+            _imageContainer = this.FindControl<Viewbox>("ImageContainer")!;
             
             // Initialize folder paths first
             InitializeFolderPaths();
@@ -225,11 +234,12 @@ namespace PhotoSorterAvalonia
             string fileName = Path.GetFileName(currentPhoto);
             
             FileText.Text = fileName;
+            
+            // Reset zoom and rotation for new photo
+            ResetZoom();
+            
             LoadImageWithCache(currentPhoto);
             UpdateStatistics();
-            
-            ApplyCurrentZoomAndRotation();
-            ResetTranslation();
             
             // Preload adjacent images in background
             PreloadAdjacentImages();
@@ -728,6 +738,9 @@ namespace PhotoSorterAvalonia
             }
             
             ClampCurrentTranslation();
+            
+            // Update the Viewbox display after zoom
+            UpdateViewboxDisplay();
         }
         
         /// <summary>
@@ -869,6 +882,32 @@ namespace PhotoSorterAvalonia
             if (transformGroup.Children[2] is not RotateTransform rotateTransform) return;
             
             rotateTransform.Angle = _currentRotation;
+            
+            // Update the Viewbox display after rotation
+            UpdateViewboxDisplay();
+        }
+        
+        /// <summary>
+        /// Updates the Viewbox to ensure proper display after zoom/rotation changes.
+        /// </summary>
+        private void UpdateViewboxDisplay()
+        {
+            if (_imageContainer == null || CurrentImage.Source == null) return;
+            
+            // Wait for layout to update
+            Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                try
+                {
+                    // Force the Viewbox to recalculate its layout
+                    _imageContainer.InvalidateMeasure();
+                    _imageContainer.InvalidateArrange();
+                }
+                catch
+                {
+                    // Silent fallback
+                }
+            }, DispatcherPriority.Background);
         }
         
         #endregion
@@ -1081,13 +1120,13 @@ namespace PhotoSorterAvalonia
                     break;
                     
                 case Key.Add:
-                case Key.OemPlus:
+                case Key.W:
                     ZoomIn();
                     e.Handled = true;
                     break;
                     
                 case Key.Subtract:
-                case Key.OemMinus:
+                case Key.S:
                     ZoomOut();
                     e.Handled = true;
                     break;

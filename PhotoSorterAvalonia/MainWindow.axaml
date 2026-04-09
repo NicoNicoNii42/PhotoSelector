@@ -9,32 +9,33 @@
     
     <Grid RowDefinitions="*,Auto" Margin="20" RowSpacing="10">
         
-        <!-- Photo Display Area -->
+        <!-- Photo Display Area with Viewbox for responsive sizing -->
         <Border Grid.Row="0" Background="#2C2C2C" CornerRadius="10" BorderBrush="#404040" BorderThickness="2">
-            <Grid>
-                <!-- Image Display with Zoom/Pan -->
-                <Image x:Name="CurrentImage" 
-                       Stretch="Uniform" 
-                       HorizontalAlignment="Center" 
-                       VerticalAlignment="Center">
-                    <Image.RenderTransform>
-                        <TransformGroup>
-                            <ScaleTransform ScaleX="1" ScaleY="1"/>
-                            <TranslateTransform X="0" Y="0"/>
-                            <RotateTransform Angle="0"/>
-                        </TransformGroup>
-                    </Image.RenderTransform>
-                </Image>
-                
-                <!-- Zoom controls have been removed for cleaner interface -->
-                <!-- Keyboard shortcuts still work: +, -, 0, Q, E -->
-                
-                <!-- Instructions Overlay -->
-                <Border x:Name="InstructionsOverlay" 
-                        Background="#80000000" 
-                        IsVisible="True"
-                        CornerRadius="10"
-                        Padding="20">
+            <Viewbox x:Name="ImageContainer" Stretch="Uniform">
+                <Grid>
+                    <!-- Image Display with Zoom/Pan -->
+                    <Image x:Name="CurrentImage" 
+                           Stretch="None" 
+                           HorizontalAlignment="Center" 
+                           VerticalAlignment="Center">
+                        <Image.RenderTransform>
+                            <TransformGroup>
+                                <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                <TranslateTransform X="0" Y="0"/>
+                                <RotateTransform Angle="0"/>
+                            </TransformGroup>
+                        </Image.RenderTransform>
+                    </Image>
+                    
+                    <!-- Zoom controls have been removed for cleaner interface -->
+                    <!-- Keyboard shortcuts still work: +, -, 0, Q, E -->
+                    
+                    <!-- Instructions Overlay -->
+                    <Border x:Name="InstructionsOverlay" 
+                            Background="#80000000" 
+                            IsVisible="True"
+                            CornerRadius="10"
+                            Padding="20">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="500" Spacing="20">
                         <TextBlock Text="📸 Photo Sorter" FontSize="28" FontWeight="Bold" Foreground="White" 
                                    HorizontalAlignment="Center"/>
@@ -82,8 +83,8 @@
                                     <TextBlock Text="• Shift + Up: Move to 'very good' folder" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Q: Rotate left (counter-clockwise)" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• E: Rotate right (clockwise)" FontSize="14" Foreground="White"/>
-                                    <TextBlock Text="• +: Zoom in" FontSize="14" Foreground="White"/>
-                                    <TextBlock Text="• -: Zoom out" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• W: Zoom in" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• S: Zoom out" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• 0: Reset zoom" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• H: Show/hide instructions" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Escape: Quit with statistics" FontSize="14" Foreground="White"/>
@@ -99,7 +100,8 @@
                                 Click="StartSorting_Click"/>
                     </StackPanel>
                 </Border>
-            </Grid>
+                </Grid>
+            </Viewbox>
         </Border>
         
         <!-- Bottom Panel with Statistics, Progress, and Action Buttons -->
