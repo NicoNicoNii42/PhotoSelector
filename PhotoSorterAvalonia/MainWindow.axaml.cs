@@ -4,12 +4,14 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace PhotoSorterAvalonia
 {
@@ -37,6 +39,10 @@ namespace PhotoSorterAvalonia
         public const int ExifOrientationRotated180 = 3;
         public const int ExifOrientationRotated90Clockwise = 6;
         public const int ExifOrientationRotated270Clockwise = 8;
+        
+        // Cache configuration
+        public const int MaxCacheSize = 12; // Maximum number of images to keep in RAM
+        public const int PreloadRange = 5; // Number of adjacent images to preload
     }
 
     /// <summary>
@@ -65,6 +71,11 @@ namespace PhotoSorterAvalonia
         
         // Persistent statistics
         private StatisticsManager.StatisticsData _persistentStats = null!;
+        
+        // Image cache for preloading with LRU eviction
+        private readonly Dictionary<string, Bitmap> _imageCache = new();
+        private readonly LinkedList<string> _lruList = new(); // Most recent at front, least recent at back
+        private readonly HashSet<string> _loadingImages = new();
         
         #endregion
         
@@ -221,11 +232,14 @@ namespace PhotoSorterAvalonia
             string fileName = Path.GetFileName(currentPhoto);
             
             FileText.Text = fileName;
-            LoadImage(currentPhoto);
+            LoadImageWithCache(currentPhoto);
             UpdateStatistics();
             
             ApplyCurrentZoomAndRotation();
             ResetTranslation();
+            
+            // Preload adjacent images in background
+            PreloadAdjacentImages();
         }
         
         /// <summary>
@@ -238,18 +252,88 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
-        /// Attempts to load an image from the specified path.
+        /// Attempts to load an image from the specified path with progressive loading.
         /// </summary>
         /// <param name="imagePath">The path to the image file.</param>
         private void LoadImage(string imagePath)
         {
             try
             {
-                CurrentImage.Source = new Bitmap(imagePath);
-                ApplyExifOrientation(imagePath);
+                // First show a placeholder or low-res preview immediately
+                ShowImagePlaceholder(imagePath);
+                
+                // Then load the full image in the background
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var bitmap = new Bitmap(imagePath);
+                        
+                        // Update UI on main thread with full image
+                        Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            CurrentImage.Source = bitmap;
+                        });
+                    }
+                    catch
+                    {
+                        // If full image fails, keep the placeholder
+                    }
+                });
             }
             catch
             {
+                ShowImageLoadError(imagePath);
+            }
+        }
+        
+        /// <summary>
+        /// Shows a placeholder or low-resolution preview of the image.
+        /// </summary>
+        /// <param name="imagePath">The path to the image file.</param>
+        private void ShowImagePlaceholder(string imagePath)
+        {
+            try
+            {
+                // Create a simple colored placeholder with file name
+                var drawing = new DrawingGroup();
+                using (var context = drawing.Open())
+                {
+                    // Background
+                    context.DrawRectangle(
+                        new SolidColorBrush(Color.FromRgb(60, 60, 60)),
+                        null,
+                        new Rect(0, 0, 800, 600));
+                    
+                    // Text with file name
+                    var text = new FormattedText(
+                        Path.GetFileName(imagePath),
+                        System.Globalization.CultureInfo.CurrentCulture,
+                        FlowDirection.LeftToRight,
+                        new Typeface("Arial"),
+                        24,
+                        Brushes.White);
+                    
+                    context.DrawText(text, new Point(20, 20));
+                    
+                    // Loading text
+                    var loadingText = new FormattedText(
+                        "Loading full image...",
+                        System.Globalization.CultureInfo.CurrentCulture,
+                        FlowDirection.LeftToRight,
+                        new Typeface("Arial"),
+                        16,
+                        Brushes.LightGray);
+                    
+                    context.DrawText(loadingText, new Point(20, 60));
+                }
+                
+                var drawingImage = new DrawingImage(drawing);
+                CurrentImage.Source = drawingImage;
+            }
+            catch
+            {
+                // If placeholder fails, show simple error
                 ShowImageLoadError(imagePath);
             }
         }
@@ -261,6 +345,202 @@ namespace PhotoSorterAvalonia
         private void ShowImageLoadError(string imagePath)
         {
             FileText.Text = $"{Path.GetFileName(imagePath)} (Preview not available)";
+        }
+        
+        /// <summary>
+        /// Loads an image using cache-first approach with LRU eviction.
+        /// </summary>
+        /// <param name="imagePath">The path to the image file.</param>
+        private void LoadImageWithCache(string imagePath)
+        {
+            try
+            {
+                // Check if image is already in cache
+                lock (_imageCache)
+                {
+                    if (_imageCache.TryGetValue(imagePath, out var cachedBitmap))
+                    {
+                        // Update LRU - move to front (most recently used)
+                        lock (_lruList)
+                        {
+                            _lruList.Remove(imagePath);
+                            _lruList.AddFirst(imagePath);
+                        }
+                        
+                        // Use cached image immediately
+                        CurrentImage.Source = cachedBitmap;
+                        return;
+                    }
+                }
+                
+                // Show placeholder while loading
+                ShowImagePlaceholder(imagePath);
+                
+                // Load image in background and cache it
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var bitmap = new Bitmap(imagePath);
+                        
+                        // Add to cache with LRU management
+                        lock (_imageCache)
+                        {
+                            _imageCache[imagePath] = bitmap;
+                            
+                            // Update LRU
+                            lock (_lruList)
+                            {
+                                _lruList.AddFirst(imagePath);
+                            }
+                            
+                            // Enforce cache size limit
+                            EnforceCacheSizeLimit();
+                        }
+                        
+                        // Update UI on main thread
+                        Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            CurrentImage.Source = bitmap;
+                        });
+                    }
+                    catch
+                    {
+                        // If loading fails, keep placeholder
+                    }
+                    finally
+                    {
+                        // Remove from loading set
+                        lock (_loadingImages)
+                        {
+                            _loadingImages.Remove(imagePath);
+                        }
+                    }
+                });
+            }
+            catch
+            {
+                ShowImageLoadError(imagePath);
+            }
+        }
+        
+        /// <summary>
+        /// Enforces the cache size limit by removing least recently used images.
+        /// </summary>
+        private void EnforceCacheSizeLimit()
+        {
+            lock (_imageCache)
+            {
+                lock (_lruList)
+                {
+                    while (_imageCache.Count > AppConfig.MaxCacheSize && _lruList.Count > 0)
+                    {
+                        // Remove least recently used item (from the back of the list)
+                        string lruKey = _lruList.Last!.Value;
+                        _lruList.RemoveLast();
+                        
+                        if (_imageCache.TryGetValue(lruKey, out var bitmap))
+                        {
+                            bitmap.Dispose();
+                            _imageCache.Remove(lruKey);
+                        }
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Preloads adjacent images (next and previous 2) in the background.
+        /// </summary>
+        private void PreloadAdjacentImages()
+        {
+            Task.Run(() =>
+            {
+                for (int offset = -AppConfig.PreloadRange; offset <= AppConfig.PreloadRange; offset++)
+                {
+                    if (offset == 0) continue; // Skip current image
+                    
+                    int targetIndex = _currentIndex + offset;
+                    if (targetIndex >= 0 && targetIndex < _photos.Count)
+                    {
+                        string imagePath = _photos[targetIndex];
+                        
+                        // Check if already cached or loading
+                        lock (_imageCache)
+                        {
+                            if (_imageCache.ContainsKey(imagePath))
+                                continue;
+                        }
+                        
+                        lock (_loadingImages)
+                        {
+                            if (_loadingImages.Contains(imagePath))
+                                continue;
+                            
+                            _loadingImages.Add(imagePath);
+                        }
+                        
+                        // Load and cache in background
+                        Task.Run(() =>
+                        {
+                            try
+                            {
+                                var bitmap = new Bitmap(imagePath);
+                                
+                                lock (_imageCache)
+                                {
+                                    _imageCache[imagePath] = bitmap;
+                                    
+                                    // Update LRU for preloaded images
+                                    lock (_lruList)
+                                    {
+                                        _lruList.AddFirst(imagePath);
+                                    }
+                                    
+                                    // Enforce cache size limit
+                                    EnforceCacheSizeLimit();
+                                }
+                            }
+                            catch
+                            {
+                                // Ignore loading errors for preloaded images
+                            }
+                            finally
+                            {
+                                lock (_loadingImages)
+                                {
+                                    _loadingImages.Remove(imagePath);
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+        }
+        
+        /// <summary>
+        /// Clears the image cache to free memory.
+        /// </summary>
+        private void ClearImageCache()
+        {
+            lock (_imageCache)
+            {
+                foreach (var bitmap in _imageCache.Values)
+                {
+                    bitmap.Dispose();
+                }
+                _imageCache.Clear();
+            }
+            
+            lock (_lruList)
+            {
+                _lruList.Clear();
+            }
+            
+            lock (_loadingImages)
+            {
+                _loadingImages.Clear();
+            }
         }
         
         /// <summary>
@@ -679,6 +959,21 @@ namespace PhotoSorterAvalonia
             {
                 File.Move(currentPhoto, destination);
                 counter++;
+                
+                // Remove from cache
+                lock (_imageCache)
+                {
+                    if (_imageCache.TryGetValue(currentPhoto, out var bitmap))
+                    {
+                        bitmap.Dispose();
+                        _imageCache.Remove(currentPhoto);
+                    }
+                }
+                
+                lock (_loadingImages)
+                {
+                    _loadingImages.Remove(currentPhoto);
+                }
                 
                 // Remove the moved photo from the list
                 _photos.RemoveAt(_currentIndex);
