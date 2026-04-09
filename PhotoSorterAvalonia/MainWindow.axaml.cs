@@ -4,6 +4,8 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using MetadataExtractor;
+using MetadataExtractor.Formats.Exif;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -83,9 +85,9 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void CreateDestinationFolders()
         {
-            Directory.CreateDirectory(_goodFolder);
-            Directory.CreateDirectory(_veryGoodFolder);
-            Directory.CreateDirectory(_sortedOutFolder);
+            System.IO.Directory.CreateDirectory(_goodFolder);
+            System.IO.Directory.CreateDirectory(_veryGoodFolder);
+            System.IO.Directory.CreateDirectory(_sortedOutFolder);
         }
         
         /// <summary>
@@ -116,7 +118,7 @@ namespace PhotoSorterAvalonia
             try
             {
                 _photos.Clear();
-                _photos.AddRange(Directory.GetFiles(SourceFolder, FileExtension)
+                _photos.AddRange(System.IO.Directory.GetFiles(SourceFolder, FileExtension)
                     .OrderBy(f => f));
                 
                 _totalPhotos = _photos.Count;
@@ -150,7 +152,26 @@ namespace PhotoSorterAvalonia
             FileText.Text = fileName;
             LoadImage(currentPhoto);
             UpdateStatistics();
-            ResetZoom();
+            
+            // Apply current zoom and rotation (keep them across photos)
+            ApplyZoom();
+            ApplyRotation();
+            
+            // Reset translation for the new photo (center it)
+            ResetTranslation();
+        }
+        
+        /// <summary>
+        /// Resets translation to center the image.
+        /// </summary>
+        private void ResetTranslation()
+        {
+            if (CurrentImage.RenderTransform is TransformGroup transformGroup &&
+                transformGroup.Children[1] is TranslateTransform translateTransform)
+            {
+                translateTransform.X = 0;
+                translateTransform.Y = 0;
+            }
         }
         
         /// <summary>
@@ -161,12 +182,70 @@ namespace PhotoSorterAvalonia
         {
             try
             {
+                // Load the image
                 CurrentImage.Source = new Bitmap(imagePath);
+                
+                // Apply automatic EXIF orientation
+                ApplyExifOrientation(imagePath);
             }
             catch
             {
                 // If we can't load the DNG, show a placeholder message
                 FileText.Text = $"{Path.GetFileName(imagePath)} (Preview not available)";
+            }
+        }
+        
+        /// <summary>
+        /// Reads EXIF orientation metadata from an image file.
+        /// </summary>
+        /// <param name="imagePath">The path to the image file.</param>
+        /// <returns>The EXIF orientation value (1-8), or 1 if not found.</returns>
+        private int GetExifOrientation(string imagePath)
+        {
+            try
+            {
+                var directories = ImageMetadataReader.ReadMetadata(imagePath);
+                var exifDirectory = directories.OfType<ExifIfd0Directory>().FirstOrDefault();
+                
+                if (exifDirectory?.TryGetInt32(ExifDirectoryBase.TagOrientation, out int orientation) == true)
+                {
+                    return orientation;
+                }
+            }
+            catch
+            {
+                // If we can't read EXIF data, continue with default orientation
+            }
+            
+            return 1; // Default: Normal orientation
+        }
+        
+        /// <summary>
+        /// Applies automatic rotation based on EXIF orientation metadata.
+        /// </summary>
+        /// <param name="imagePath">The path to the image file.</param>
+        private void ApplyExifOrientation(string imagePath)
+        {
+            int exifOrientation = GetExifOrientation(imagePath);
+            
+            // Debug: Show what orientation was detected
+            FileText.Text += $" [EXIF: {exifOrientation}]";
+            
+            // Map EXIF orientation to rotation degrees
+            double rotationDegrees = exifOrientation switch
+            {
+                1 => 0,      // Normal
+                3 => 180,    // Rotated 180°
+                6 => 90,     // Rotated 90° clockwise
+                8 => 270,    // Rotated 270° clockwise (90° counter-clockwise)
+                _ => 0       // Default: no rotation
+            };
+            
+            // Apply the rotation
+            if (rotationDegrees != 0)
+            {
+                _currentRotation = rotationDegrees;
+                ApplyRotation();
             }
         }
         
@@ -299,6 +378,23 @@ namespace PhotoSorterAvalonia
             _currentRotation = 0.0;
             ApplyZoom();
             ApplyRotation();
+            
+            // Reset translation
+            if (CurrentImage.RenderTransform is TransformGroup transformGroup &&
+                transformGroup.Children[1] is TranslateTransform translateTransform)
+            {
+                translateTransform.X = 0;
+                translateTransform.Y = 0;
+            }
+        }
+        
+        /// <summary>
+        /// Resets zoom and translation but keeps rotation (for EXIF orientation).
+        /// </summary>
+        private void ResetZoomAndTranslation()
+        {
+            _currentScale = 1.0;
+            ApplyZoom();
             
             // Reset translation
             if (CurrentImage.RenderTransform is TransformGroup transformGroup &&
