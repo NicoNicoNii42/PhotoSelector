@@ -15,7 +15,6 @@ using System.Threading.Tasks;
 
 namespace PhotoSorterAvalonia
 {
-    //TODO: Fix statistics persistence, fix auto rotation
     /// <summary>
     /// Configuration settings for the Photo Sorter application.
     /// </summary>
@@ -34,15 +33,9 @@ namespace PhotoSorterAvalonia
         public const double DefaultZoomScale = 1.0;
         public const double DefaultRotation = 0.0;
         
-        public const int DefaultExifOrientation = 1; // Normal orientation
-        public const int ExifOrientationNormal = 1;
-        public const int ExifOrientationRotated180 = 3;
-        public const int ExifOrientationRotated90Clockwise = 6;
-        public const int ExifOrientationRotated270Clockwise = 8;
-        
         // Cache configuration
-        public const int MaxCacheSize = 12; // Maximum number of images to keep in RAM
-        public const int PreloadRange = 5; // Number of adjacent images to preload
+        public const int MaxCacheSize = 20; // Maximum number of images to keep in RAM
+        public const int PreloadRange = 2; // Number of adjacent images to preload
     }
 
     /// <summary>
@@ -543,74 +536,8 @@ namespace PhotoSorterAvalonia
             }
         }
         
-        /// <summary>
-        /// Reads EXIF orientation metadata from an image file.
-        /// </summary>
-        /// <param name="imagePath">The path to the image file.</param>
-        /// <returns>The EXIF orientation value (1-8), or 1 if not found.</returns>
-        private int GetExifOrientation(string imagePath)
-        {
-            try
-            {
-                var directories = ImageMetadataReader.ReadMetadata(imagePath);
-                var exifDirectory = directories.OfType<ExifIfd0Directory>().FirstOrDefault();
-                
-                if (exifDirectory?.TryGetInt32(ExifDirectoryBase.TagOrientation, out int orientation) == true)
-                {
-                    return orientation;
-                }
-            }
-            catch
-            {
-                // If we can't read EXIF data, continue with default orientation
-            }
-            
-            return AppConfig.DefaultExifOrientation;
-        }
-        
-        /// <summary>
-        /// Applies automatic rotation based on EXIF orientation metadata.
-        /// </summary>
-        /// <param name="imagePath">The path to the image file.</param>
-        private void ApplyExifOrientation(string imagePath)
-        {
-            int exifOrientation = GetExifOrientation(imagePath);
-            ShowExifDebugInfo(exifOrientation);
-            
-            double rotationDegrees = MapExifOrientationToDegrees(exifOrientation);
-            
-            if (rotationDegrees != AppConfig.DefaultRotation)
-            {
-                _currentRotation = rotationDegrees;
-                ApplyRotation();
-            }
-        }
-        
-        /// <summary>
-        /// Shows EXIF orientation debug information in the file text display.
-        /// </summary>
-        /// <param name="exifOrientation">The detected EXIF orientation value.</param>
-        private void ShowExifDebugInfo(int exifOrientation)
-        {
-            FileText.Text += $" [EXIF: {exifOrientation}]";
-        }
-        
-        /// <summary>
-        /// Maps EXIF orientation value to rotation degrees.
-        /// </summary>
-        /// <param name="exifOrientation">The EXIF orientation value (1-8).</param>
-        /// <returns>The corresponding rotation in degrees.</returns>
-        private double MapExifOrientationToDegrees(int exifOrientation)
-        {
-            return exifOrientation switch
-            {
-                AppConfig.ExifOrientationNormal => 0,
-                AppConfig.ExifOrientationRotated180 => 180,
-                AppConfig.ExifOrientationRotated90Clockwise => 90,
-                AppConfig.ExifOrientationRotated270Clockwise => 270,
-                _ => AppConfig.DefaultRotation
-            };
-        }
+        // EXIF auto-rotation has been removed due to MetadataExtractor library limitations with DNG files
+        // Manual rotation is available via Q/E keyboard shortcuts
         
         /// <summary>
         /// Updates the statistics display.
