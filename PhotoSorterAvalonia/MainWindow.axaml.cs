@@ -18,6 +18,7 @@ namespace PhotoSorterAvalonia
     //TODO: cleanup this class into parts
     //TODO: retain relative zoom across images
     //TODO: fix portrait images slightly zoomed in
+    //TODO: create script not properly working anymore
     /// <summary>
     /// Configuration settings for the Photo Sorter application.
     /// </summary>
