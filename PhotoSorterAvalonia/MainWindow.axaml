@@ -26,20 +26,8 @@
                     </Image.RenderTransform>
                 </Image>
                 
-                <!-- Zoom & Rotation Controls -->
-                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Spacing="5" 
-                            IsVisible="{Binding #ShowZoomControls.IsChecked}">
-                    <Button Content="+" Width="40" Height="40" FontSize="20" CornerRadius="20"
-                            Click="ZoomIn_Click"/>
-                    <Button Content="−" Width="40" Height="40" FontSize="20" CornerRadius="20"
-                            Click="ZoomOut_Click"/>
-                    <Button Content="⟲" Width="40" Height="40" FontSize="20" CornerRadius="20"
-                            Click="ResetZoom_Click"/>
-                    <Button Content="↻" Width="40" Height="40" FontSize="20" CornerRadius="20"
-                            Click="RotateClockwise_Click"/>
-                    <Button Content="↺" Width="40" Height="40" FontSize="20" CornerRadius="20"
-                            Click="RotateCounterClockwise_Click"/>
-                </StackPanel>
+                <!-- Zoom controls have been removed for cleaner interface -->
+                <!-- Keyboard shortcuts still work: +, -, 0, Q, E -->
                 
                 <!-- Instructions Overlay -->
                 <Border x:Name="InstructionsOverlay" 
@@ -92,17 +80,13 @@
                                     <TextBlock Text="• Shift + Left: Sort out" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Shift + Right: Move to 'good' folder" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Shift + Up: Move to 'very good' folder" FontSize="14" Foreground="White"/>
-                                    <TextBlock Text="• Q: Quit application" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Q: Rotate left (counter-clockwise)" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• E: Rotate right (clockwise)" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• +: Zoom in" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• -: Zoom out" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• 0: Reset zoom" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• H: Show/hide instructions" FontSize="14" Foreground="White"/>
-                                </StackPanel>
-                                
-                                <TextBlock Text="ZOOM CONTROLS:" FontSize="18" FontWeight="Bold" Foreground="White" 
-                                           Margin="0,10,0,0"/>
-                                
-                                <StackPanel Spacing="5">
-                                    <TextBlock Text="• Mouse wheel: Zoom in/out" FontSize="14" Foreground="White"/>
-                                    <TextBlock Text="• Drag: Pan when zoomed" FontSize="14" Foreground="White"/>
-                                    <TextBlock Text="• Double-click: Reset zoom" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Escape: Quit with statistics" FontSize="14" Foreground="White"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -137,17 +121,8 @@
                 </StackPanel>
             </Border>
             
-            <!-- Zoom Controls Toggle -->
-            <Border Grid.Column="2" Background="#3C3C3C" CornerRadius="10" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="ZOOM CONTROLS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
-                    <CheckBox x:Name="ShowZoomControls" Content="Show" IsChecked="False" 
-                              Margin="0,5,0,0" Foreground="White"/>
-                </StackPanel>
-            </Border>
-            
             <!-- Progress -->
-            <Border Grid.Column="3" Background="#3C3C3C" CornerRadius="10" Padding="15">
+            <Border Grid.Column="2" Background="#3C3C3C" CornerRadius="10" Padding="15">
                 <StackPanel>
                     <TextBlock Text="PROGRESS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
                     <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="100" Value="0" 
@@ -157,34 +132,38 @@
                 </StackPanel>
             </Border>
             
-            <!-- Action Buttons -->
+            <!-- Action Buttons (Focus visuals disabled) -->
             <Button Grid.Column="4" 
                     Content="← SORT OUT" 
                     Background="#666666" Foreground="White"
                     FontSize="16" FontWeight="Bold"
                     Height="60" CornerRadius="10"
-                    Click="SortOut_Click"/>
+                    Click="SortOut_Click"
+                    Focusable="False"/>
             
             <Button Grid.Column="5" 
                     Content="GOOD →" 
                     Background="#2E7D32" Foreground="White"
                     FontSize="16" FontWeight="Bold"
                     Height="60" CornerRadius="10"
-                    Click="Good_Click"/>
+                    Click="Good_Click"
+                    Focusable="False"/>
             
             <Button Grid.Column="6" 
                     Content="↑ VERY GOOD" 
                     Background="#1565C0" Foreground="White"
                     FontSize="16" FontWeight="Bold"
                     Height="60" CornerRadius="10"
-                    Click="VeryGood_Click"/>
+                    Click="VeryGood_Click"
+                    Focusable="False"/>
             
             <Button Grid.Column="7" 
                     Content="QUIT" 
                     Background="#C62828" Foreground="White"
                     FontSize="16" FontWeight="Bold"
                     Height="60" CornerRadius="10"
-                    Click="Quit_Click"/>
+                    Click="Quit_Click"
+                    Focusable="False"/>
         </Grid>
     </Grid>
     
