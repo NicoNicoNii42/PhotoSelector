@@ -209,8 +209,8 @@ namespace PhotoSorterAvalonia
             
             FileText.Text = fileName;
             
-            // Reset zoom and rotation for new photo
-            ResetZoom();
+            // Keep current zoom scale but reset translation for new photo
+            ResetTranslation();
             
             LoadImageWithCache(currentPhoto);
             UpdateStatistics();
