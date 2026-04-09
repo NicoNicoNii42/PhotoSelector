@@ -141,7 +141,7 @@
             <Border Grid.Column="2" Background="#3C3C3C" CornerRadius="10" Padding="15">
                 <StackPanel>
                     <TextBlock Text="ZOOM CONTROLS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
-                    <CheckBox x:Name="ShowZoomControls" Content="Show" IsChecked="True" 
+                    <CheckBox x:Name="ShowZoomControls" Content="Show" IsChecked="False" 
                               Margin="0,5,0,0" Foreground="White"/>
                 </StackPanel>
             </Border>

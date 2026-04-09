@@ -77,19 +77,82 @@ namespace PhotoSorterAvalonia
         }
 
         /// <summary>
-        /// Creates default statistics data.
+        /// Creates default statistics data by scanning folder contents.
         /// </summary>
-        /// <returns>A new StatisticsData instance with default values.</returns>
+        /// <returns>A new StatisticsData instance with values from folder scanning.</returns>
         private static StatisticsData CreateDefaultStatistics()
         {
+            return ScanFolderStatistics();
+        }
+        
+        /// <summary>
+        /// Scans the destination folders to count existing files.
+        /// </summary>
+        /// <returns>Statistics data based on current folder contents.</returns>
+        public static StatisticsData ScanFolderStatistics()
+        {
+            try
+            {
+                string sourceFolder = AppConfig.SourceFolder;
+                string goodFolder = Path.Combine(sourceFolder, AppConfig.GoodFolderName);
+                string veryGoodFolder = Path.Combine(sourceFolder, AppConfig.VeryGoodFolderName);
+                string sortedOutFolder = Path.Combine(sourceFolder, AppConfig.SortedOutFolderName);
+                
+                int goodCount = Directory.Exists(goodFolder) ? 
+                    Directory.GetFiles(goodFolder, AppConfig.FileExtension).Length : 0;
+                
+                int veryGoodCount = Directory.Exists(veryGoodFolder) ? 
+                    Directory.GetFiles(veryGoodFolder, AppConfig.FileExtension).Length : 0;
+                
+                int sortedOutCount = Directory.Exists(sortedOutFolder) ? 
+                    Directory.GetFiles(sortedOutFolder, AppConfig.FileExtension).Length : 0;
+                
+                int totalPhotosProcessed = goodCount + veryGoodCount + sortedOutCount;
+                
+                return new StatisticsData
+                {
+                    TotalPhotosProcessed = totalPhotosProcessed,
+                    GoodCount = goodCount,
+                    VeryGoodCount = veryGoodCount,
+                    SortedOutCount = sortedOutCount,
+                    LastSessionDate = DateTime.Now,
+                    SessionCount = 1
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error scanning folder statistics: {ex.Message}");
+                return new StatisticsData
+                {
+                    TotalPhotosProcessed = 0,
+                    GoodCount = 0,
+                    VeryGoodCount = 0,
+                    SortedOutCount = 0,
+                    LastSessionDate = DateTime.Now,
+                    SessionCount = 1
+                };
+            }
+        }
+        
+        /// <summary>
+        /// Merges scanned folder statistics with persistent statistics.
+        /// </summary>
+        /// <param name="persistentData">The persistent statistics data.</param>
+        /// <returns>Updated statistics data with folder scanning results.</returns>
+        public static StatisticsData MergeWithFolderScan(StatisticsData persistentData)
+        {
+            var folderStats = ScanFolderStatistics();
+            
+            // Use the maximum values between persistent data and folder scan
+            // This ensures we don't lose data if files were moved manually
             return new StatisticsData
             {
-                TotalPhotosProcessed = 0,
-                GoodCount = 0,
-                VeryGoodCount = 0,
-                SortedOutCount = 0,
-                LastSessionDate = DateTime.MinValue,
-                SessionCount = 0
+                TotalPhotosProcessed = Math.Max(persistentData.TotalPhotosProcessed, folderStats.TotalPhotosProcessed),
+                GoodCount = Math.Max(persistentData.GoodCount, folderStats.GoodCount),
+                VeryGoodCount = Math.Max(persistentData.VeryGoodCount, folderStats.VeryGoodCount),
+                SortedOutCount = Math.Max(persistentData.SortedOutCount, folderStats.SortedOutCount),
+                LastSessionDate = DateTime.Now,
+                SessionCount = persistentData.SessionCount + 1
             };
         }
 

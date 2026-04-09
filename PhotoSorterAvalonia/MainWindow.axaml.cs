@@ -77,10 +77,16 @@ namespace PhotoSorterAvalonia
         {
             InitializeComponent();
             
-            // Load persistent statistics
-            _persistentStats = StatisticsManager.LoadStatistics();
-            
+            // Initialize folder paths first
             InitializeFolderPaths();
+            
+            // Load persistent statistics and merge with folder scan
+            _persistentStats = StatisticsManager.LoadStatistics();
+            _persistentStats = StatisticsManager.MergeWithFolderScan(_persistentStats);
+            
+            // Initialize current session counts from folder scan
+            InitializeCurrentCountsFromFolders();
+            
             CreateDestinationFolders();
             LoadPhotos();
             SetupEventHandlers();
@@ -122,16 +128,9 @@ namespace PhotoSorterAvalonia
             // Keyboard handlers
             KeyDown += OnKeyDown;
             
-            // Mouse wheel for zoom
-            CurrentImage.PointerWheelChanged += OnMouseWheel;
-            
-            // Mouse drag for pan
-            CurrentImage.PointerPressed += OnMousePressed;
-            CurrentImage.PointerMoved += OnMouseMoved;
-            CurrentImage.PointerReleased += OnMouseReleased;
-            
-            // Double click to reset zoom
-            CurrentImage.DoubleTapped += OnDoubleTapped;
+            // Note: All mouse-based zoom and pan controls are disabled by default
+            // They can be re-enabled by checking the "Show Zoom Controls" checkbox
+            // This includes: mouse wheel zoom, double-click reset, and drag panning
         }
         
         /// <summary>
@@ -156,6 +155,31 @@ namespace PhotoSorterAvalonia
                 Focus();
                 CurrentImage.Focus();
             };
+        }
+        
+        /// <summary>
+        /// Initializes current session counts by scanning destination folders.
+        /// </summary>
+        private void InitializeCurrentCountsFromFolders()
+        {
+            try
+            {
+                _goodCount = System.IO.Directory.Exists(_goodFolder) ? 
+                    System.IO.Directory.GetFiles(_goodFolder, AppConfig.FileExtension).Length : 0;
+                
+                _veryGoodCount = System.IO.Directory.Exists(_veryGoodFolder) ? 
+                    System.IO.Directory.GetFiles(_veryGoodFolder, AppConfig.FileExtension).Length : 0;
+                
+                _sortedOutCount = System.IO.Directory.Exists(_sortedOutFolder) ? 
+                    System.IO.Directory.GetFiles(_sortedOutFolder, AppConfig.FileExtension).Length : 0;
+                
+                // Update display with folder-scanned counts
+                UpdateStatistics();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing counts from folders: {ex.Message}");
+            }
         }
         
         /// <summary>
