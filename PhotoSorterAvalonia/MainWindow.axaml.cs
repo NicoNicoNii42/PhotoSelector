@@ -362,6 +362,10 @@ namespace PhotoSorterAvalonia
                         
                         // Use cached image immediately
                         CurrentImage.Source = cachedBitmap;
+                        
+                        // Apply EXIF auto-rotation
+                        ApplyExifOrientation(imagePath);
+                        
                         return;
                     }
                 }
@@ -395,6 +399,9 @@ namespace PhotoSorterAvalonia
                         Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             CurrentImage.Source = bitmap;
+                            
+                            // Apply EXIF auto-rotation for non-cached images
+                            ApplyExifOrientation(imagePath);
                         });
                     }
                     catch
@@ -536,8 +543,95 @@ namespace PhotoSorterAvalonia
             }
         }
         
-        // EXIF auto-rotation has been removed due to MetadataExtractor library limitations with DNG files
-        // Manual rotation is available via Q/E keyboard shortcuts
+        /// <summary>
+        /// Reads EXIF orientation metadata from an image file using ExifTool command-line.
+        /// </summary>
+        /// <param name="imagePath">The path to the image file.</param>
+        /// <returns>The EXIF orientation value (1-8), or 1 if not found.</returns>
+        private int GetExifOrientation(string imagePath)
+        {
+            try
+            {
+                Console.WriteLine($"DEBUG: Reading EXIF from: {Path.GetFileName(imagePath)} using ExifTool");
+                
+                // Use ExifTool command-line to get numeric orientation
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "exiftool",
+                    Arguments = $"-Orientation -n -s3 \"{imagePath}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using var process = System.Diagnostics.Process.Start(startInfo);
+                if (process == null)
+                {
+                    Console.WriteLine($"DEBUG: Failed to start ExifTool process");
+                    return 1; // Default orientation
+                }
+                
+                process.WaitForExit(2000); // Wait up to 2 seconds
+                
+                if (process.ExitCode == 0)
+                {
+                    string output = process.StandardOutput.ReadToEnd().Trim();
+                    if (int.TryParse(output, out int orientation) && orientation >= 1 && orientation <= 8)
+                    {
+                        Console.WriteLine($"DEBUG: Found EXIF orientation via ExifTool: {orientation}");
+                        return orientation;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"DEBUG: ExifTool output not a valid orientation: '{output}'");
+                    }
+                }
+                else
+                {
+                    string error = process.StandardError.ReadToEnd();
+                    Console.WriteLine($"DEBUG: ExifTool error: {error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"DEBUG: ExifTool read error: {ex.Message}");
+            }
+            
+            return 1; // Default orientation (normal)
+        }
+        
+        /// <summary>
+        /// Applies automatic rotation based on EXIF orientation metadata using ExifTool.
+        /// </summary>
+        /// <param name="imagePath">The path to the image file.</param>
+        private void ApplyExifOrientation(string imagePath)
+        {
+            int exifOrientation = GetExifOrientation(imagePath);
+            
+            // Map EXIF orientation to rotation degrees
+            double rotationDegrees = exifOrientation switch
+            {
+                1 => 0,    // Normal
+                3 => 180,  // Rotated 180°
+                6 => 90,   // Rotated 90° clockwise
+                8 => 270,  // Rotated 270° clockwise (90° counter-clockwise)
+                _ => 0     // Default
+            };
+            
+            // Always apply rotation (even if 0°) to reset from previous photo
+            _currentRotation = rotationDegrees;
+            ApplyRotation();
+            
+            if (rotationDegrees != 0)
+            {
+                Console.WriteLine($"DEBUG: Applied auto-rotation: {rotationDegrees}° (EXIF: {exifOrientation})");
+            }
+            else
+            {
+                Console.WriteLine($"DEBUG: Reset rotation to 0° (EXIF: {exifOrientation})");
+            }
+        }
         
         /// <summary>
         /// Updates the statistics display.

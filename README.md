@@ -1,1 +1,2 @@
 # PhotoSelector
+98% vibe coded project on unknown frameworks. No guarantee this is actually a good way of achieving the results. I only payed attention, that some patterns where used and the codebase is not a complete mess.
