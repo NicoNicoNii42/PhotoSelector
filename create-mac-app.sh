@@ -10,7 +10,7 @@ echo "=================================================="
 
 # Configuration
 APP_NAME="Photo Sorter"
-APP_IDENTIFIER="com.niconiconii.PhotoSorter"
+APP_IDENTIFIER="com.photoselector.PhotoSorter"
 VERSION="1.0.0"
 BUILD_DIR="test-build"  # Updated to match the publish output directory
 APP_BUNDLE_DIR="Photo Sorter.app"

@@ -14,9 +14,9 @@ namespace PhotoSorterAvalonia
         
         /// <summary>
         /// Source folder containing photos to sort.
-        /// Default: "/Users/niconiconii/Pictures/DCIM/100LEICA"
+        /// Default: "/Users/niconiconii/Library/Mobile Documents/com~apple~CloudDocs/DCIM/100LEICA"
         /// </summary>
-        public const string SourceFolder = "/Users/niconiconii/Pictures/DCIM/100LEICA";
+        public const string SourceFolder = "/Users/niconiconii/Library/Mobile Documents/com~apple~CloudDocs/DCIM/100LEICA";
         
         /// <summary>
         /// File extension pattern for photos to sort.
