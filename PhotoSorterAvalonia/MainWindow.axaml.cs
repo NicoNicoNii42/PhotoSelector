@@ -14,7 +14,7 @@ namespace PhotoSorterAvalonia
     public partial class MainWindow : Window
     {
         // Configuration
-        private readonly string sourceFolder = "/Users/niconiconii/Pictures/DCIM/100LEICA";
+        private readonly string sourceFolder = "/Users/niconiconii/Pictures/DCIMTest/100LEICA";
         private readonly string goodFolder;
         private readonly string veryGoodFolder;
         private readonly string sortedOutFolder;
@@ -508,27 +508,93 @@ namespace PhotoSorterAvalonia
             dialog.ShowDialog(this);
         }
         
+        private void MoveToNext()
+        {
+            if (currentIndex < photos.Count - 1)
+            {
+                currentIndex++;
+                UpdateDisplay();
+                FileText.Text = $"→ Next photo";
+            }
+            else if (currentIndex == photos.Count - 1)
+            {
+                FileText.Text = "Last photo";
+            }
+        }
+        
+        private void MoveToPrevious()
+        {
+            if (currentIndex > 0)
+            {
+                currentIndex--;
+                UpdateDisplay();
+                FileText.Text = $"← Previous photo";
+            }
+            else if (currentIndex == 0)
+            {
+                FileText.Text = "First photo";
+            }
+        }
+        
         #endregion
         
         #region Keyboard Handlers
         
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
+            bool shiftPressed = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            
             switch (e.Key)
             {
                 case Key.Left:
-                    SortOutCurrent();
+                    if (shiftPressed)
+                    {
+                        // Shift + Left: Sort out current photo
+                        SortOutCurrent();
+                    }
+                    else
+                    {
+                        // Left alone: Move to previous photo
+                        MoveToPrevious();
+                    }
                     e.Handled = true;
                     break;
                     
                 case Key.Right:
-                    MoveToGood();
+                    if (shiftPressed)
+                    {
+                        // Shift + Right: Move to good folder
+                        MoveToGood();
+                    }
+                    else
+                    {
+                        // Right alone: Move to next photo
+                        MoveToNext();
+                    }
                     e.Handled = true;
                     break;
                     
                 case Key.Up:
-                    MoveToVeryGood();
+                    if (shiftPressed)
+                    {
+                        // Shift + Up: Move to very good folder
+                        MoveToVeryGood();
+                    }
+                    else
+                    {
+                        // Up alone: Move to next photo (alternative navigation)
+                        MoveToNext();
+                    }
                     e.Handled = true;
+                    break;
+                    
+                case Key.Down:
+                    if (!shiftPressed)
+                    {
+                        // Down alone: Move to previous photo (alternative navigation)
+                        MoveToPrevious();
+                        e.Handled = true;
+                    }
                     break;
                     
                 case Key.Q:

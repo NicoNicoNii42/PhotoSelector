@@ -85,9 +85,13 @@
                                            Margin="0,10,0,0"/>
                                 
                                 <StackPanel Spacing="5">
-                                    <TextBlock Text="• Left Arrow: Sort out" FontSize="14" Foreground="White"/>
-                                    <TextBlock Text="• Right Arrow: Good" FontSize="14" Foreground="White"/>
-                                    <TextBlock Text="• Up Arrow: Very Good" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Left Arrow: Previous photo" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Right Arrow: Next photo" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Up Arrow: Next photo (alternative)" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Down Arrow: Previous photo (alternative)" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Shift + Left: Sort out" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Shift + Right: Move to 'good' folder" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Shift + Up: Move to 'very good' folder" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Q: Quit application" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• H: Show/hide instructions" FontSize="14" Foreground="White"/>
                                 </StackPanel>
