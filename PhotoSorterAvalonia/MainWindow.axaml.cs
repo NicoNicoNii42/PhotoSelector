@@ -13,6 +13,7 @@ using System.Linq;
 
 namespace PhotoSorterAvalonia
 {
+    //TODO: Fix statistics persistence, fix auto rotation
     /// <summary>
     /// Configuration settings for the Photo Sorter application.
     /// </summary>
@@ -62,6 +63,9 @@ namespace PhotoSorterAvalonia
         private Point _lastMousePosition;
         private bool _isDragging;
         
+        // Persistent statistics
+        private StatisticsManager.StatisticsData _persistentStats = null!;
+        
         #endregion
         
         #region Constructor
@@ -72,6 +76,9 @@ namespace PhotoSorterAvalonia
         public MainWindow()
         {
             InitializeComponent();
+            
+            // Load persistent statistics
+            _persistentStats = StatisticsManager.LoadStatistics();
             
             InitializeFolderPaths();
             CreateDestinationFolders();
@@ -675,7 +682,23 @@ namespace PhotoSorterAvalonia
         #region Keyboard Handlers
         
         /// <summary>
-        /// Handles keyboard input for navigation and sorting.
+        /// Handles keyboard input for navigation, sorting, and image manipulation.
+        /// 
+        /// Navigation:
+        ///   ← → ↑ ↓     - Navigate between photos
+        ///   Shift+←     - Sort out (move to sortedout folder)
+        ///   Shift+→     - Good (move to good folder)
+        ///   Shift+↑     - Very Good (move to verygood folder)
+        ///   
+        /// Image Manipulation:
+        ///   Q           - Rotate left (counter-clockwise)
+        ///   E           - Rotate right (clockwise)
+        ///   + / -       - Zoom in/out
+        ///   0           - Reset zoom
+        ///   
+        /// Application:
+        ///   H           - Toggle help overlay
+        ///   Escape      - Quit with statistics
         /// </summary>
         private void OnKeyDown(object? sender, KeyEventArgs e)
         {
@@ -728,8 +751,12 @@ namespace PhotoSorterAvalonia
                     break;
                     
                 case Key.Q:
-                    ShowFinalStatistics();
-                    Close();
+                    RotateCounterClockwise();
+                    e.Handled = true;
+                    break;
+                    
+                case Key.E:
+                    RotateClockwise();
                     e.Handled = true;
                     break;
                     
@@ -753,6 +780,12 @@ namespace PhotoSorterAvalonia
                 case Key.D0:
                 case Key.NumPad0:
                     ResetZoom();
+                    e.Handled = true;
+                    break;
+                    
+                case Key.Escape:
+                    ShowFinalStatistics();
+                    Close();
                     e.Handled = true;
                     break;
             }
@@ -792,30 +825,61 @@ namespace PhotoSorterAvalonia
         #region Utility Methods
         
         /// <summary>
-        /// Shows final statistics in a dialog window.
+        /// Shows final statistics in a dialog window, including persistent statistics.
         /// </summary>
         private void ShowFinalStatistics()
         {
-            string stats = $"Final Statistics:\n\n" +
-                          $"Total photos: {_totalPhotos}\n" +
-                          $"Sorted out: {_sortedOutCount}\n" +
-                          $"Good: {_goodCount}\n" +
-                          $"Very Good: {_veryGoodCount}\n\n" +
-                          $"Photos moved to 'sorted out' folder: {_sortedOutFolder}\n" +
-                          $"Photos moved to 'good' folder: {_goodFolder}\n" +
-                          $"Photos moved to 'very good' folder: {_veryGoodFolder}";
+            // Merge current session statistics with persistent statistics
+            var mergedStats = StatisticsManager.MergeStatistics(
+                _persistentStats,
+                _goodCount,
+                _veryGoodCount,
+                _sortedOutCount,
+                _totalPhotos);
+            
+            // Save the merged statistics
+            StatisticsManager.SaveStatistics(mergedStats);
+            
+            string stats = $"📊 FINAL STATISTICS\n" +
+                          $"==================\n\n" +
+                          
+                          $"📈 Current Session:\n" +
+                          $"   • Total photos: {_totalPhotos}\n" +
+                          $"   • Sorted out: {_sortedOutCount}\n" +
+                          $"   • Good: {_goodCount}\n" +
+                          $"   • Very Good: {_veryGoodCount}\n\n" +
+                          
+                          $"📊 Persistent Statistics (All Sessions):\n" +
+                          $"   • Total photos processed: {mergedStats.TotalPhotosProcessed}\n" +
+                          $"   • Total sorted out: {mergedStats.SortedOutCount}\n" +
+                          $"   • Total good: {mergedStats.GoodCount}\n" +
+                          $"   • Total very good: {mergedStats.VeryGoodCount}\n" +
+                          $"   • Session count: {mergedStats.SessionCount}\n" +
+                          $"   • Last session: {mergedStats.LastSessionDate:yyyy-MM-dd HH:mm}\n\n" +
+                          
+                          $"📁 Folder Locations:\n" +
+                          $"   • Sorted out: {_sortedOutFolder}\n" +
+                          $"   • Good: {_goodFolder}\n" +
+                          $"   • Very Good: {_veryGoodFolder}\n\n" +
+                          
+                          $"💾 Statistics saved to:\n" +
+                          $"   {StatisticsManager.GetStatisticsFilePath()}";
             
             var dialog = new Window()
             {
                 Title = "Photo Sorter - Complete",
-                Width = 500,
-                Height = 350,
-                Content = new TextBlock 
-                { 
-                    Text = stats,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                    TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                Width = 600,
+                Height = 450,
+                Content = new ScrollViewer
+                {
+                    Content = new TextBlock 
+                    { 
+                        Text = stats,
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                        Margin = new Thickness(20)
+                    }
                 }
             };
             dialog.ShowDialog(this);
