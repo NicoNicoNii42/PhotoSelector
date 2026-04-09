@@ -14,27 +14,41 @@ using System.Linq;
 namespace PhotoSorterAvalonia
 {
     /// <summary>
+    /// Configuration settings for the Photo Sorter application.
+    /// </summary>
+    public static class AppConfig
+    {
+        public const string SourceFolder = "/Users/niconiconii/Pictures/DCIM/100LEICA";
+        public const string FileExtension = "*.DNG";
+        public const string GoodFolderName = "good";
+        public const string VeryGoodFolderName = "verygood";
+        public const string SortedOutFolderName = "sortedout";
+        
+        public const double MinZoomScale = 0.2;
+        public const double MaxZoomScale = 5.0;
+        public const double ZoomFactor = 1.1;
+        public const double RotationStep = 90.0;
+        public const double DefaultZoomScale = 1.0;
+        public const double DefaultRotation = 0.0;
+        
+        public const int DefaultExifOrientation = 1; // Normal orientation
+        public const int ExifOrientationNormal = 1;
+        public const int ExifOrientationRotated180 = 3;
+        public const int ExifOrientationRotated90Clockwise = 6;
+        public const int ExifOrientationRotated270Clockwise = 8;
+    }
+
+    /// <summary>
     /// Main window for the Photo Sorter application.
     /// Allows sorting photos into three categories using keyboard shortcuts and mouse gestures.
     /// </summary>
     public partial class MainWindow : Window
     {
-        #region Constants and Configuration
-        
-        private const string SourceFolder = "/Users/niconiconii/Pictures/DCIM/100LEICA";
-        private const string FileExtension = "*.DNG";
-        private const double MinZoomScale = 0.2;
-        private const double MaxZoomScale = 5.0;
-        private const double ZoomFactor = 1.1;
-        private const double RotationStep = 90.0;
-        
-        #endregion
-        
         #region Private Fields
         
-        private readonly string _goodFolder;
-        private readonly string _veryGoodFolder;
-        private readonly string _sortedOutFolder;
+        private string _goodFolder = null!;
+        private string _veryGoodFolder = null!;
+        private string _sortedOutFolder = null!;
         
         private readonly List<string> _photos = new();
         private int _currentIndex;
@@ -43,8 +57,8 @@ namespace PhotoSorterAvalonia
         private int _veryGoodCount;
         private int _sortedOutCount;
         
-        private double _currentScale = 1.0;
-        private double _currentRotation;
+        private double _currentScale = AppConfig.DefaultZoomScale;
+        private double _currentRotation = AppConfig.DefaultRotation;
         private Point _lastMousePosition;
         private bool _isDragging;
         
@@ -59,26 +73,29 @@ namespace PhotoSorterAvalonia
         {
             InitializeComponent();
             
-            // Initialize folder paths
-            _goodFolder = Path.Combine(SourceFolder, "good");
-            _veryGoodFolder = Path.Combine(SourceFolder, "verygood");
-            _sortedOutFolder = Path.Combine(SourceFolder, "sortedout");
-            
+            InitializeFolderPaths();
             CreateDestinationFolders();
             LoadPhotos();
             SetupEventHandlers();
             UpdateDisplay();
             
-            // Hide instructions on startup
-            InstructionsOverlay.IsVisible = false;
-            
-            // Focus the window for keyboard input
-            Activated += (_, _) => Focus();
+            HideInstructionsOnStartup();
+            SetupWindowFocus();
         }
         
         #endregion
         
         #region Initialization Methods
+        
+        /// <summary>
+        /// Initializes the folder paths for sorting categories.
+        /// </summary>
+        private void InitializeFolderPaths()
+        {
+            _goodFolder = Path.Combine(AppConfig.SourceFolder, AppConfig.GoodFolderName);
+            _veryGoodFolder = Path.Combine(AppConfig.SourceFolder, AppConfig.VeryGoodFolderName);
+            _sortedOutFolder = Path.Combine(AppConfig.SourceFolder, AppConfig.SortedOutFolderName);
+        }
         
         /// <summary>
         /// Creates the destination folders if they don't exist.
@@ -111,6 +128,30 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
+        /// Hides the instructions overlay on application startup.
+        /// </summary>
+        private void HideInstructionsOnStartup()
+        {
+            InstructionsOverlay.IsVisible = false;
+        }
+        
+        /// <summary>
+        /// Sets up window focus for keyboard input.
+        /// </summary>
+        private void SetupWindowFocus()
+        {
+            // Focus the window when it's activated
+            Activated += (_, _) => Focus();
+            
+            // Also focus the image control to ensure keyboard events are captured
+            Loaded += (_, _) =>
+            {
+                Focus();
+                CurrentImage.Focus();
+            };
+        }
+        
+        /// <summary>
         /// Loads all photos from the source folder.
         /// </summary>
         private void LoadPhotos()
@@ -118,7 +159,7 @@ namespace PhotoSorterAvalonia
             try
             {
                 _photos.Clear();
-                _photos.AddRange(System.IO.Directory.GetFiles(SourceFolder, FileExtension)
+                _photos.AddRange(System.IO.Directory.GetFiles(AppConfig.SourceFolder, AppConfig.FileExtension)
                     .OrderBy(f => f));
                 
                 _totalPhotos = _photos.Count;
@@ -141,8 +182,7 @@ namespace PhotoSorterAvalonia
         {
             if (_currentIndex >= _photos.Count)
             {
-                FileText.Text = "All photos sorted!";
-                CurrentImage.Source = null;
+                ShowCompletionMessage();
                 return;
             }
             
@@ -153,25 +193,17 @@ namespace PhotoSorterAvalonia
             LoadImage(currentPhoto);
             UpdateStatistics();
             
-            // Apply current zoom and rotation (keep them across photos)
-            ApplyZoom();
-            ApplyRotation();
-            
-            // Reset translation for the new photo (center it)
+            ApplyCurrentZoomAndRotation();
             ResetTranslation();
         }
         
         /// <summary>
-        /// Resets translation to center the image.
+        /// Shows the completion message when all photos are sorted.
         /// </summary>
-        private void ResetTranslation()
+        private void ShowCompletionMessage()
         {
-            if (CurrentImage.RenderTransform is TransformGroup transformGroup &&
-                transformGroup.Children[1] is TranslateTransform translateTransform)
-            {
-                translateTransform.X = 0;
-                translateTransform.Y = 0;
-            }
+            FileText.Text = "All photos sorted!";
+            CurrentImage.Source = null;
         }
         
         /// <summary>
@@ -182,17 +214,22 @@ namespace PhotoSorterAvalonia
         {
             try
             {
-                // Load the image
                 CurrentImage.Source = new Bitmap(imagePath);
-                
-                // Apply automatic EXIF orientation
                 ApplyExifOrientation(imagePath);
             }
             catch
             {
-                // If we can't load the DNG, show a placeholder message
-                FileText.Text = $"{Path.GetFileName(imagePath)} (Preview not available)";
+                ShowImageLoadError(imagePath);
             }
+        }
+        
+        /// <summary>
+        /// Shows an error message when an image cannot be loaded.
+        /// </summary>
+        /// <param name="imagePath">The path to the image file that failed to load.</param>
+        private void ShowImageLoadError(string imagePath)
+        {
+            FileText.Text = $"{Path.GetFileName(imagePath)} (Preview not available)";
         }
         
         /// <summary>
@@ -217,7 +254,7 @@ namespace PhotoSorterAvalonia
                 // If we can't read EXIF data, continue with default orientation
             }
             
-            return 1; // Default: Normal orientation
+            return AppConfig.DefaultExifOrientation;
         }
         
         /// <summary>
@@ -227,26 +264,41 @@ namespace PhotoSorterAvalonia
         private void ApplyExifOrientation(string imagePath)
         {
             int exifOrientation = GetExifOrientation(imagePath);
+            ShowExifDebugInfo(exifOrientation);
             
-            // Debug: Show what orientation was detected
-            FileText.Text += $" [EXIF: {exifOrientation}]";
+            double rotationDegrees = MapExifOrientationToDegrees(exifOrientation);
             
-            // Map EXIF orientation to rotation degrees
-            double rotationDegrees = exifOrientation switch
-            {
-                1 => 0,      // Normal
-                3 => 180,    // Rotated 180°
-                6 => 90,     // Rotated 90° clockwise
-                8 => 270,    // Rotated 270° clockwise (90° counter-clockwise)
-                _ => 0       // Default: no rotation
-            };
-            
-            // Apply the rotation
-            if (rotationDegrees != 0)
+            if (rotationDegrees != AppConfig.DefaultRotation)
             {
                 _currentRotation = rotationDegrees;
                 ApplyRotation();
             }
+        }
+        
+        /// <summary>
+        /// Shows EXIF orientation debug information in the file text display.
+        /// </summary>
+        /// <param name="exifOrientation">The detected EXIF orientation value.</param>
+        private void ShowExifDebugInfo(int exifOrientation)
+        {
+            FileText.Text += $" [EXIF: {exifOrientation}]";
+        }
+        
+        /// <summary>
+        /// Maps EXIF orientation value to rotation degrees.
+        /// </summary>
+        /// <param name="exifOrientation">The EXIF orientation value (1-8).</param>
+        /// <returns>The corresponding rotation in degrees.</returns>
+        private double MapExifOrientationToDegrees(int exifOrientation)
+        {
+            return exifOrientation switch
+            {
+                AppConfig.ExifOrientationNormal => 0,
+                AppConfig.ExifOrientationRotated180 => 180,
+                AppConfig.ExifOrientationRotated90Clockwise => 90,
+                AppConfig.ExifOrientationRotated270Clockwise => 270,
+                _ => AppConfig.DefaultRotation
+            };
         }
         
         /// <summary>
@@ -260,7 +312,16 @@ namespace PhotoSorterAvalonia
                             $"Sorted Out: {_sortedOutCount}";
             
             ProgressText.Text = $"{_currentIndex + 1}/{_totalPhotos}";
-            ProgressBar.Value = _totalPhotos > 0 ? (double)(_currentIndex + 1) / _totalPhotos * 100 : 0;
+            ProgressBar.Value = CalculateProgressPercentage();
+        }
+        
+        /// <summary>
+        /// Calculates the progress percentage for the progress bar.
+        /// </summary>
+        /// <returns>The progress percentage (0-100).</returns>
+        private double CalculateProgressPercentage()
+        {
+            return _totalPhotos > 0 ? (double)(_currentIndex + 1) / _totalPhotos * 100 : 0;
         }
         
         #endregion
@@ -288,7 +349,8 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void OnMousePressed(object? sender, PointerPressedEventArgs e)
         {
-            if (_currentScale > 1.0 && e.GetCurrentPoint(CurrentImage).Properties.IsLeftButtonPressed)
+            if (_currentScale > AppConfig.DefaultZoomScale && 
+                e.GetCurrentPoint(CurrentImage).Properties.IsLeftButtonPressed)
             {
                 _isDragging = true;
                 _lastMousePosition = e.GetPosition(CurrentImage);
@@ -332,7 +394,7 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void ZoomIn()
         {
-            _currentScale = Math.Min(_currentScale * ZoomFactor, MaxZoomScale);
+            _currentScale = Math.Min(_currentScale * AppConfig.ZoomFactor, AppConfig.MaxZoomScale);
             ApplyZoom();
         }
         
@@ -341,7 +403,7 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void ZoomOut()
         {
-            _currentScale = Math.Max(_currentScale / ZoomFactor, MinZoomScale);
+            _currentScale = Math.Max(_currentScale / AppConfig.ZoomFactor, AppConfig.MinZoomScale);
             ApplyZoom();
         }
         
@@ -358,15 +420,16 @@ namespace PhotoSorterAvalonia
                 scaleTransform.ScaleY = _currentScale;
             }
             
-            // After zooming, clamp translation to keep image in bounds
-            if (transformGroup.Children[1] is TranslateTransform translateTransform)
-            {
-                double x = translateTransform.X;
-                double y = translateTransform.Y;
-                ClampTranslation(ref x, ref y);
-                translateTransform.X = x;
-                translateTransform.Y = y;
-            }
+            ClampCurrentTranslation();
+        }
+        
+        /// <summary>
+        /// Applies the current zoom and rotation to the image.
+        /// </summary>
+        private void ApplyCurrentZoomAndRotation()
+        {
+            ApplyZoom();
+            ApplyRotation();
         }
         
         /// <summary>
@@ -374,12 +437,17 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void ResetZoom()
         {
-            _currentScale = 1.0;
-            _currentRotation = 0.0;
-            ApplyZoom();
-            ApplyRotation();
-            
-            // Reset translation
+            _currentScale = AppConfig.DefaultZoomScale;
+            _currentRotation = AppConfig.DefaultRotation;
+            ApplyCurrentZoomAndRotation();
+            ResetTranslation();
+        }
+        
+        /// <summary>
+        /// Resets translation to center the image.
+        /// </summary>
+        private void ResetTranslation()
+        {
             if (CurrentImage.RenderTransform is TransformGroup transformGroup &&
                 transformGroup.Children[1] is TranslateTransform translateTransform)
             {
@@ -389,20 +457,18 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
-        /// Resets zoom and translation but keeps rotation (for EXIF orientation).
+        /// Clamps the current translation to keep the image within bounds.
         /// </summary>
-        private void ResetZoomAndTranslation()
+        private void ClampCurrentTranslation()
         {
-            _currentScale = 1.0;
-            ApplyZoom();
+            if (CurrentImage.RenderTransform is not TransformGroup transformGroup) return;
+            if (transformGroup.Children[1] is not TranslateTransform translateTransform) return;
             
-            // Reset translation
-            if (CurrentImage.RenderTransform is TransformGroup transformGroup &&
-                transformGroup.Children[1] is TranslateTransform translateTransform)
-            {
-                translateTransform.X = 0;
-                translateTransform.Y = 0;
-            }
+            double x = translateTransform.X;
+            double y = translateTransform.Y;
+            ClampTranslation(ref x, ref y);
+            translateTransform.X = x;
+            translateTransform.Y = y;
         }
         
         /// <summary>
@@ -472,7 +538,7 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void RotateClockwise()
         {
-            _currentRotation = (_currentRotation + RotationStep) % 360;
+            _currentRotation = (_currentRotation + AppConfig.RotationStep) % 360;
             ApplyRotation();
         }
         
@@ -481,7 +547,7 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void RotateCounterClockwise()
         {
-            _currentRotation = (_currentRotation - RotationStep) % 360;
+            _currentRotation = (_currentRotation - AppConfig.RotationStep) % 360;
             if (_currentRotation < 0) _currentRotation += 360;
             ApplyRotation();
         }
@@ -780,3 +846,4 @@ namespace PhotoSorterAvalonia
         #endregion
     }
 }
+               

@@ -572,3 +572,40 @@ cython_debug/
 # Ignore any test photo directories
 test-photos/
 sample-photos/
+
+# Photo Sorter specific ignores
+# macOS application bundle
+Photo Sorter.app/
+
+# Generated scripts and installation files
+create-mac-app.sh
+Install Photo Sorter.command
+Uninstall Photo Sorter.command
+
+# Generated icon files
+icon.svg
+icon.png
+icon.iconset/
+
+# Release build outputs (already covered by general patterns, but being explicit)
+PhotoSorterAvalonia/bin/
+PhotoSorterAvalonia/obj/
+
+# .NET build artifacts
+*.dll
+*.exe
+*.pdb
+*.cache
+*.resources
+*.dylib
+singlefilehost
+
+# macOS specific files (already covered but being explicit)
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# User-specific configuration files
+*.user
+*.suo
+*.userprefs
