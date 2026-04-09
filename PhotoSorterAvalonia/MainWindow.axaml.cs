@@ -507,6 +507,9 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void ClearImageCache()
         {
+            // Clear current image source before disposing to prevent accessing disposed bitmap
+            CurrentImage.Source = null;
+            
             lock (_imageCache)
             {
                 foreach (var bitmap in _imageCache.Values)
@@ -969,13 +972,22 @@ namespace PhotoSorterAvalonia
                 File.Move(currentPhoto, destination);
                 counter++;
                 
-                // Remove from cache
+                // Clear current image source before disposing to prevent accessing disposed bitmap
+                CurrentImage.Source = null;
+                
+                // Remove from cache and LRU list
                 lock (_imageCache)
                 {
                     if (_imageCache.TryGetValue(currentPhoto, out var bitmap))
                     {
                         bitmap.Dispose();
                         _imageCache.Remove(currentPhoto);
+                        
+                        // Also remove from LRU list
+                        lock (_lruList)
+                        {
+                            _lruList.Remove(currentPhoto);
+                        }
                     }
                 }
                 
