@@ -552,8 +552,6 @@ namespace PhotoSorterAvalonia
         {
             try
             {
-                Console.WriteLine($"DEBUG: Reading EXIF from: {Path.GetFileName(imagePath)} using ExifTool");
-                
                 // Use ExifTool command-line to get numeric orientation
                 var startInfo = new System.Diagnostics.ProcessStartInfo
                 {
@@ -566,11 +564,7 @@ namespace PhotoSorterAvalonia
                 };
                 
                 using var process = System.Diagnostics.Process.Start(startInfo);
-                if (process == null)
-                {
-                    Console.WriteLine($"DEBUG: Failed to start ExifTool process");
-                    return 1; // Default orientation
-                }
+                if (process == null) return 1;
                 
                 process.WaitForExit(2000); // Wait up to 2 seconds
                 
@@ -579,23 +573,13 @@ namespace PhotoSorterAvalonia
                     string output = process.StandardOutput.ReadToEnd().Trim();
                     if (int.TryParse(output, out int orientation) && orientation >= 1 && orientation <= 8)
                     {
-                        Console.WriteLine($"DEBUG: Found EXIF orientation via ExifTool: {orientation}");
                         return orientation;
                     }
-                    else
-                    {
-                        Console.WriteLine($"DEBUG: ExifTool output not a valid orientation: '{output}'");
-                    }
-                }
-                else
-                {
-                    string error = process.StandardError.ReadToEnd();
-                    Console.WriteLine($"DEBUG: ExifTool error: {error}");
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"DEBUG: ExifTool read error: {ex.Message}");
+                // Silent fallback
             }
             
             return 1; // Default orientation (normal)
@@ -622,15 +606,6 @@ namespace PhotoSorterAvalonia
             // Always apply rotation (even if 0°) to reset from previous photo
             _currentRotation = rotationDegrees;
             ApplyRotation();
-            
-            if (rotationDegrees != 0)
-            {
-                Console.WriteLine($"DEBUG: Applied auto-rotation: {rotationDegrees}° (EXIF: {exifOrientation})");
-            }
-            else
-            {
-                Console.WriteLine($"DEBUG: Reset rotation to 0° (EXIF: {exifOrientation})");
-            }
         }
         
         /// <summary>
