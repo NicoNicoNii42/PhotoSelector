@@ -7,6 +7,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -177,6 +178,7 @@ namespace PhotoSorterAvalonia
                     .OrderBy(f => f));
                 
                 _totalPhotos = _photos.Count;
+                LogImageDiagnostic($"LoadPhotos complete. SourceFolder='{AppConfig.SourceFolder}', Filter='{AppConfig.FileExtension}', Total={_totalPhotos}");
                 UpdateStatistics();
             }
             catch (Exception ex)
@@ -290,8 +292,13 @@ namespace PhotoSorterAvalonia
         /// <param name="imagePath">The path to the image file.</param>
         private void LoadImageWithCache(string imagePath)
         {
+            var loadTimer = Stopwatch.StartNew();
             try
             {
+                bool fileExists = File.Exists(imagePath);
+                long fileSize = fileExists ? new FileInfo(imagePath).Length : -1;
+                LogImageDiagnostic($"Load requested. Index={_currentIndex}, Path='{imagePath}', Exists={fileExists}, SizeBytes={fileSize}");
+
                 // Check if image is already in cache
                 lock (_imageCache)
                 {
@@ -306,6 +313,7 @@ namespace PhotoSorterAvalonia
                         
                         // Use cached image immediately
                         CurrentImage.Source = cachedBitmap;
+                        LogImageDiagnostic($"Cache hit. Path='{imagePath}', ElapsedMs={loadTimer.ElapsedMilliseconds}");
                         
                         // Apply EXIF auto-rotation
                         ApplyExifOrientation(imagePath);
@@ -315,14 +323,17 @@ namespace PhotoSorterAvalonia
                 }
                 
                 // Show placeholder while loading
+                LogImageDiagnostic($"Cache miss. Showing placeholder. Path='{imagePath}'");
                 ShowImagePlaceholder(imagePath);
                 
                 // Load image in background and cache it
                 Task.Run(() =>
                 {
+                    var decodeTimer = Stopwatch.StartNew();
                     try
                     {
-                        var bitmap = new Bitmap(imagePath);
+                        var bitmap = LoadBitmapWithFallback(imagePath);
+                        LogImageDiagnostic($"Decode success. Path='{imagePath}', ElapsedMs={decodeTimer.ElapsedMilliseconds}");
                         
                         // Add to cache with LRU management
                         lock (_imageCache)
@@ -342,15 +353,26 @@ namespace PhotoSorterAvalonia
                         // Update UI on main thread
                         Dispatcher.UIThread.InvokeAsync(() =>
                         {
+                            string? currentExpectedPath = _currentIndex >= 0 && _currentIndex < _photos.Count
+                                ? _photos[_currentIndex]
+                                : null;
+                            if (!string.Equals(currentExpectedPath, imagePath, StringComparison.Ordinal))
+                            {
+                                LogImageDiagnostic($"Stale UI update candidate. Requested='{imagePath}', CurrentExpected='{currentExpectedPath}'");
+                                return;
+                            }
+
                             CurrentImage.Source = bitmap;
+                            LogImageDiagnostic($"UI image source set. Path='{imagePath}', TotalElapsedMs={loadTimer.ElapsedMilliseconds}");
                             
                             // Apply EXIF auto-rotation for non-cached images
                             ApplyExifOrientation(imagePath);
                         });
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         // If loading fails, keep placeholder
+                        LogImageDiagnostic($"Decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                     }
                     finally
                     {
@@ -362,8 +384,9 @@ namespace PhotoSorterAvalonia
                     }
                 });
             }
-            catch
+            catch (Exception ex)
             {
+                LogImageDiagnostic($"LoadImageWithCache failed before decode. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                 ShowImageLoadError(imagePath);
             }
         }
@@ -427,9 +450,10 @@ namespace PhotoSorterAvalonia
                         // Load and cache in background
                         Task.Run(() =>
                         {
+                            var preloadTimer = Stopwatch.StartNew();
                             try
                             {
-                                var bitmap = new Bitmap(imagePath);
+                                var bitmap = LoadBitmapWithFallback(imagePath);
                                 
                                 lock (_imageCache)
                                 {
@@ -444,10 +468,12 @@ namespace PhotoSorterAvalonia
                                     // Enforce cache size limit
                                     EnforceCacheSizeLimit();
                                 }
+                                LogImageDiagnostic($"Preload success. Path='{imagePath}', ElapsedMs={preloadTimer.ElapsedMilliseconds}");
                             }
-                            catch
+                            catch (Exception ex)
                             {
                                 // Ignore loading errors for preloaded images
+                                LogImageDiagnostic($"Preload failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                             }
                             finally
                             {
@@ -469,39 +495,362 @@ namespace PhotoSorterAvalonia
         /// <returns>The EXIF orientation value (1-8), or 1 if not found.</returns>
         private int GetExifOrientation(string imagePath)
         {
+            var exifTimer = Stopwatch.StartNew();
             try
             {
-                // Use ExifTool command-line to get numeric orientation
+                // Use ExifTool command-line to get numeric orientation (ArgumentList avoids shell injection via paths).
                 var startInfo = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "exiftool",
-                    Arguments = $"-Orientation -n -s3 \"{imagePath}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
-                
+                startInfo.ArgumentList.Add("-Orientation");
+                startInfo.ArgumentList.Add("-n");
+                startInfo.ArgumentList.Add("-s3");
+                startInfo.ArgumentList.Add(imagePath);
+
                 using var process = System.Diagnostics.Process.Start(startInfo);
-                if (process == null) return 1;
+                if (process == null)
+                {
+                    LogImageDiagnostic($"ExifTool failed to start. Path='{imagePath}'");
+                    return 1;
+                }
                 
-                process.WaitForExit(AppConfig.ExifToolTimeoutMs); // Wait up to configured timeout
+                bool exited = process.WaitForExit(AppConfig.ExifToolTimeoutMs); // Wait up to configured timeout
+                if (!exited)
+                {
+                    KillProcessAfterWaitTimeout(process);
+                    LogImageDiagnostic($"ExifTool timeout. Path='{imagePath}', TimeoutMs={AppConfig.ExifToolTimeoutMs}");
+                    return 1;
+                }
                 
                 if (process.ExitCode == 0)
                 {
                     string output = process.StandardOutput.ReadToEnd().Trim();
                     if (int.TryParse(output, out int orientation) && orientation >= 1 && orientation <= 8)
                     {
+                        LogImageDiagnostic($"Exif orientation read. Path='{imagePath}', Orientation={orientation}, ElapsedMs={exifTimer.ElapsedMilliseconds}");
                         return orientation;
                     }
+                }
+
+                string error = process.StandardError.ReadToEnd().Trim();
+                LogImageDiagnostic($"ExifTool returned no valid orientation. Path='{imagePath}', ExitCode={process.ExitCode}, StdErr='{error}'");
+            }
+            catch (Exception ex)
+            {
+                // Silent fallback
+                LogImageDiagnostic($"Exif orientation read failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+            }
+            
+            return 1; // Default orientation (normal)
+        }
+
+        /// <summary>
+        /// Writes temporary diagnostics for image loading issues.
+        /// </summary>
+        private static void LogImageDiagnostic(string message)
+        {
+            Console.WriteLine($"[ImageDiag {DateTime.Now:HH:mm:ss.fff}] {message}");
+        }
+
+        /// <summary>
+        /// When <see cref="Process.WaitForExit(int)"/> times out, the child process keeps running;
+        /// disposing <see cref="Process"/> does not terminate it. Kill the tree and reap the handle.
+        /// </summary>
+        private static void KillProcessAfterWaitTimeout(Process process)
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogImageDiagnostic($"Failed to terminate child process after timeout. Pid={process.Id}, Error='{ex.GetType().Name}: {ex.Message}'");
+                return;
+            }
+            try
+            {
+                process.WaitForExit();
+            }
+            catch
+            {
+                // Best-effort reap after Kill.
+            }
+        }
+
+        /// <summary>
+        /// Decodes a bitmap from an in-memory buffer. The stream is not retained after construction.
+        /// </summary>
+        private static Bitmap DecodeBitmapFromBuffer(byte[] buffer)
+        {
+            using var ms = new MemoryStream(buffer);
+            return new Bitmap(ms);
+        }
+
+        private static void TryDeleteFileIfExists(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
                 }
             }
             catch
             {
-                // Silent fallback
+                // Best-effort cleanup.
             }
-            
-            return 1; // Default orientation (normal)
+        }
+
+        /// <summary>
+        /// Loads bitmap using direct decode first, then falls back to ExifTool preview extraction.
+        /// </summary>
+        private Bitmap LoadBitmapWithFallback(string imagePath)
+        {
+            try
+            {
+                return new Bitmap(imagePath);
+            }
+            catch (Exception ex)
+            {
+                LogImageDiagnostic($"Direct decode failed, trying fallback preview extraction. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+            }
+
+            if (TryLoadBitmapViaSipsConversion(imagePath, out var sipsBitmap))
+            {
+                return sipsBitmap!;
+            }
+
+            if (TryLoadBitmapViaExifTool(imagePath, "-PreviewImage", out var previewBitmap))
+            {
+                return previewBitmap!;
+            }
+
+            if (TryLoadBitmapViaExifTool(imagePath, "-JpgFromRaw", out var rawJpegBitmap))
+            {
+                return rawJpegBitmap!;
+            }
+
+            throw new ArgumentException("Unable to load bitmap from provided data");
+        }
+
+        /// <summary>
+        /// Attempts high-quality conversion through macOS sips and decodes the resulting JPEG.
+        /// </summary>
+        private bool TryLoadBitmapViaSipsConversion(string imagePath, out Bitmap? bitmap)
+        {
+            bitmap = null;
+            var timer = Stopwatch.StartNew();
+            string tempJpegPath = Path.Combine(Path.GetTempPath(), $"photosorter-{Guid.NewGuid():N}.jpg");
+
+            try
+            {
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "/usr/bin/sips",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                startInfo.ArgumentList.Add("-s");
+                startInfo.ArgumentList.Add("format");
+                startInfo.ArgumentList.Add("jpeg");
+                startInfo.ArgumentList.Add(imagePath);
+                startInfo.ArgumentList.Add("--out");
+                startInfo.ArgumentList.Add(tempJpegPath);
+
+                using var process = System.Diagnostics.Process.Start(startInfo);
+                if (process == null)
+                {
+                    LogImageDiagnostic($"sips conversion failed to start. Path='{imagePath}'");
+                    return false;
+                }
+
+                // Read stdout/stderr concurrently so the child cannot deadlock on full pipe buffers while we wait.
+                var stderrTask = Task.Run(() => process.StandardError.ReadToEnd());
+                var stdoutTask = Task.Run(() => process.StandardOutput.ReadToEnd());
+                bool exited = process.WaitForExit(AppConfig.ExifToolTimeoutMs);
+                if (!exited)
+                {
+                    KillProcessAfterWaitTimeout(process);
+                    try
+                    {
+                        Task.WaitAll(new Task[] { stderrTask, stdoutTask }, millisecondsTimeout: 5000);
+                    }
+                    catch
+                    {
+                        // Best-effort wait for readers after kill.
+                    }
+
+                    TryDeleteFileIfExists(tempJpegPath);
+                    LogImageDiagnostic($"sips conversion timeout. Path='{imagePath}', TimeoutMs={AppConfig.ExifToolTimeoutMs}");
+                    return false;
+                }
+
+                string stdErr;
+                string stdOut;
+                try
+                {
+                    stdErr = stderrTask.Result.Trim();
+                    stdOut = stdoutTask.Result.Trim();
+                }
+                catch (Exception readEx)
+                {
+                    LogImageDiagnostic($"sips conversion output read failed. Path='{imagePath}', Error='{readEx.GetType().Name}: {readEx.Message}'");
+                    return false;
+                }
+
+                if (process.ExitCode != 0 || !File.Exists(tempJpegPath))
+                {
+                    LogImageDiagnostic($"sips conversion unavailable. Path='{imagePath}', ExitCode={process.ExitCode}, StdOut='{stdOut}', StdErr='{stdErr}'");
+                    return false;
+                }
+
+                byte[] bytes = File.ReadAllBytes(tempJpegPath);
+                bitmap = DecodeBitmapFromBuffer(bytes);
+                LogImageDiagnostic($"sips conversion success. Path='{imagePath}', OutputBytes={bytes.Length}, ElapsedMs={timer.ElapsedMilliseconds}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogImageDiagnostic($"sips conversion failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                return false;
+            }
+            finally
+            {
+                TryDeleteFileIfExists(tempJpegPath);
+            }
+        }
+
+        /// <summary>
+        /// Attempts to extract a JPEG preview using ExifTool and decode it as an Avalonia bitmap.
+        /// </summary>
+        private bool TryLoadBitmapViaExifTool(string imagePath, string exifArgument, out Bitmap? bitmap)
+        {
+            bitmap = null;
+            var timer = Stopwatch.StartNew();
+
+            try
+            {
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "exiftool",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                startInfo.ArgumentList.Add("-b");
+                startInfo.ArgumentList.Add(exifArgument);
+                startInfo.ArgumentList.Add(imagePath);
+
+                using var process = System.Diagnostics.Process.Start(startInfo);
+                if (process == null)
+                {
+                    LogImageDiagnostic($"Fallback decode failed to start exiftool. Path='{imagePath}', Mode='{exifArgument}'");
+                    return false;
+                }
+
+                var memoryStream = new MemoryStream();
+                try
+                {
+                    var stdoutTask = Task.Run(() =>
+                    {
+                        try
+                        {
+                            process.StandardOutput.BaseStream.CopyTo(memoryStream);
+                        }
+                        catch (IOException)
+                        {
+                            // Pipe closed after kill or process exit.
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                        }
+                    });
+                    var stderrTask = Task.Run(() =>
+                    {
+                        try
+                        {
+                            return process.StandardError.ReadToEnd();
+                        }
+                        catch
+                        {
+                            return string.Empty;
+                        }
+                    });
+
+                    bool exited = process.WaitForExit(AppConfig.ExifToolTimeoutMs);
+                    if (!exited)
+                    {
+                        KillProcessAfterWaitTimeout(process);
+                        try
+                        {
+                            stdoutTask.Wait(TimeSpan.FromSeconds(30));
+                        }
+                        catch
+                        {
+                        }
+
+                        try
+                        {
+                            stderrTask.Wait(TimeSpan.FromSeconds(5));
+                        }
+                        catch
+                        {
+                        }
+
+                        LogImageDiagnostic($"Fallback decode timeout. Path='{imagePath}', Mode='{exifArgument}', TimeoutMs={AppConfig.ExifToolTimeoutMs}");
+                        return false;
+                    }
+
+                    try
+                    {
+                        stdoutTask.Wait();
+                    }
+                    catch
+                    {
+                    }
+
+                    string stdErr = string.Empty;
+                    try
+                    {
+                        stderrTask.Wait();
+                        stdErr = stderrTask.Result.Trim();
+                    }
+                    catch
+                    {
+                    }
+
+                    if (process.ExitCode != 0 || memoryStream.Length == 0)
+                    {
+                        LogImageDiagnostic($"Fallback decode unavailable. Path='{imagePath}', Mode='{exifArgument}', ExitCode={process.ExitCode}, Bytes={memoryStream.Length}, StdErr='{stdErr}'");
+                        return false;
+                    }
+
+                    byte[] buffer = memoryStream.ToArray();
+                    bitmap = DecodeBitmapFromBuffer(buffer);
+                    LogImageDiagnostic($"Fallback decode success. Path='{imagePath}', Mode='{exifArgument}', Bytes={buffer.Length}, ElapsedMs={timer.ElapsedMilliseconds}");
+                    return true;
+                }
+                finally
+                {
+                    memoryStream.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogImageDiagnostic($"Fallback decode failed. Path='{imagePath}', Mode='{exifArgument}', Error='{ex.GetType().Name}: {ex.Message}'");
+                return false;
+            }
         }
         
         /// <summary>
