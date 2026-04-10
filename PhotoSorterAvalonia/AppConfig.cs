@@ -103,12 +103,6 @@ namespace PhotoSorterAvalonia
         // ============================================
         
         /// <summary>
-        /// Whether to show debug output in console.
-        /// Default: false (production mode)
-        /// </summary>
-        public const bool DebugMode = false;
-        
-        /// <summary>
         /// Timeout in milliseconds for EXIF tool calls.
         /// Default: 2000 (2 seconds)
         /// </summary>

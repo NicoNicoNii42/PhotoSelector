@@ -93,10 +93,9 @@ namespace PhotoSorterAvalonia
         {
             try
             {
-                string sourceFolder = AppConfig.SourceFolder;
-                string goodFolder = Path.Combine(sourceFolder, AppConfig.GoodFolderName);
-                string veryGoodFolder = Path.Combine(sourceFolder, AppConfig.VeryGoodFolderName);
-                string sortedOutFolder = Path.Combine(sourceFolder, AppConfig.SortedOutFolderName);
+                string goodFolder = AppConfig.GetGoodFolderPath();
+                string veryGoodFolder = AppConfig.GetVeryGoodFolderPath();
+                string sortedOutFolder = AppConfig.GetSortedOutFolderPath();
                 
                 int goodCount = Directory.Exists(goodFolder) ? 
                     Directory.GetFiles(goodFolder, AppConfig.FileExtension).Length : 0;

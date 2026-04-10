@@ -1,4 +1,7 @@
 ## .NET Core ##
+# Local dotnet CLI home (used when building with DOTNET_CLI_HOME in-repo)
+.dotnet/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/

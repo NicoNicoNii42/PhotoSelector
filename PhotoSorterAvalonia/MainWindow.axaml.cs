@@ -5,8 +5,6 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
-using MetadataExtractor;
-using MetadataExtractor.Formats.Exif;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -36,8 +34,6 @@ namespace PhotoSorterAvalonia
         
         private double _currentScale = AppConfig.DefaultZoomScale;
         private double _currentRotation = AppConfig.DefaultRotation;
-        private Point _lastMousePosition;
-        private bool _isDragging;
         
         // Viewbox for responsive sizing
         private Viewbox _imageContainer = null!;
@@ -92,9 +88,9 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void InitializeFolderPaths()
         {
-            _goodFolder = Path.Combine(AppConfig.SourceFolder, AppConfig.GoodFolderName);
-            _veryGoodFolder = Path.Combine(AppConfig.SourceFolder, AppConfig.VeryGoodFolderName);
-            _sortedOutFolder = Path.Combine(AppConfig.SourceFolder, AppConfig.SortedOutFolderName);
+            _goodFolder = AppConfig.GetGoodFolderPath();
+            _veryGoodFolder = AppConfig.GetVeryGoodFolderPath();
+            _sortedOutFolder = AppConfig.GetSortedOutFolderPath();
         }
         
         /// <summary>
@@ -226,42 +222,6 @@ namespace PhotoSorterAvalonia
         {
             FileText.Text = "All photos sorted!";
             CurrentImage.Source = null;
-        }
-        
-        /// <summary>
-        /// Attempts to load an image from the specified path with progressive loading.
-        /// </summary>
-        /// <param name="imagePath">The path to the image file.</param>
-        private void LoadImage(string imagePath)
-        {
-            try
-            {
-                // First show a placeholder or low-res preview immediately
-                ShowImagePlaceholder(imagePath);
-                
-                // Then load the full image in the background
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        var bitmap = new Bitmap(imagePath);
-                        
-                        // Update UI on main thread with full image
-                        Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            CurrentImage.Source = bitmap;
-                        });
-                    }
-                    catch
-                    {
-                        // If full image fails, keep the placeholder
-                    }
-                });
-            }
-            catch
-            {
-                ShowImageLoadError(imagePath);
-            }
         }
         
         /// <summary>
@@ -503,34 +463,6 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
-        /// Clears the image cache to free memory.
-        /// </summary>
-        private void ClearImageCache()
-        {
-            // Clear current image source before disposing to prevent accessing disposed bitmap
-            CurrentImage.Source = null;
-            
-            lock (_imageCache)
-            {
-                foreach (var bitmap in _imageCache.Values)
-                {
-                    bitmap.Dispose();
-                }
-                _imageCache.Clear();
-            }
-            
-            lock (_lruList)
-            {
-                _lruList.Clear();
-            }
-            
-            lock (_loadingImages)
-            {
-                _loadingImages.Clear();
-            }
-        }
-        
-        /// <summary>
         /// Reads EXIF orientation metadata from an image file using ExifTool command-line.
         /// </summary>
         /// <param name="imagePath">The path to the image file.</param>
@@ -620,68 +552,7 @@ namespace PhotoSorterAvalonia
         
         #endregion
         
-        #region Zoom and Pan Methods
-        
-        /// <summary>
-        /// Handles mouse wheel events for zooming.
-        /// </summary>
-        private void OnMouseWheel(object? sender, PointerWheelEventArgs e)
-        {
-            if (e.Delta.Y > 0)
-            {
-                ZoomIn();
-            }
-            else
-            {
-                ZoomOut();
-            }
-            e.Handled = true;
-        }
-        
-        /// <summary>
-        /// Handles mouse press events for starting drag operations.
-        /// </summary>
-        private void OnMousePressed(object? sender, PointerPressedEventArgs e)
-        {
-            if (_currentScale > AppConfig.DefaultZoomScale && 
-                e.GetCurrentPoint(CurrentImage).Properties.IsLeftButtonPressed)
-            {
-                _isDragging = true;
-                _lastMousePosition = e.GetPosition(CurrentImage);
-                e.Handled = true;
-            }
-        }
-        
-        /// <summary>
-        /// Handles mouse move events for dragging/panning.
-        /// </summary>
-        private void OnMouseMoved(object? sender, PointerEventArgs e)
-        {
-            if (!_isDragging) return;
-            
-            var currentPosition = e.GetPosition(CurrentImage);
-            var delta = currentPosition - _lastMousePosition;
-            
-            ApplyTranslationWithBounds(delta.X, delta.Y);
-            _lastMousePosition = currentPosition;
-            e.Handled = true;
-        }
-        
-        /// <summary>
-        /// Handles mouse release events for ending drag operations.
-        /// </summary>
-        private void OnMouseReleased(object? sender, PointerReleasedEventArgs e)
-        {
-            _isDragging = false;
-        }
-        
-        /// <summary>
-        /// Handles double-tap events to reset zoom.
-        /// </summary>
-        private void OnDoubleTapped(object? sender, RoutedEventArgs e)
-        {
-            ResetZoom();
-        }
+        #region Zoom Methods
         
         /// <summary>
         /// Zooms in on the current image.
@@ -1139,11 +1010,6 @@ namespace PhotoSorterAvalonia
         private void Good_Click(object? sender, RoutedEventArgs e) => MoveToGood();
         private void VeryGood_Click(object? sender, RoutedEventArgs e) => MoveToVeryGood();
         private void Quit_Click(object? sender, RoutedEventArgs e) { ShowFinalStatistics(); Close(); }
-        private void ZoomIn_Click(object? sender, RoutedEventArgs e) => ZoomIn();
-        private void ZoomOut_Click(object? sender, RoutedEventArgs e) => ZoomOut();
-        private void ResetZoom_Click(object? sender, RoutedEventArgs e) => ResetZoom();
-        private void RotateClockwise_Click(object? sender, RoutedEventArgs e) => RotateClockwise();
-        private void RotateCounterClockwise_Click(object? sender, RoutedEventArgs e) => RotateCounterClockwise();
         
         private void StartSorting_Click(object? sender, RoutedEventArgs e)
         {
@@ -1153,11 +1019,6 @@ namespace PhotoSorterAvalonia
             {
                 ShowError("No .DNG files found in the source folder.");
             }
-        }
-        
-        private void ToggleInstructions_Click(object? sender, RoutedEventArgs e)
-        {
-            InstructionsOverlay.IsVisible = !InstructionsOverlay.IsVisible;
         }
         
         #endregion
