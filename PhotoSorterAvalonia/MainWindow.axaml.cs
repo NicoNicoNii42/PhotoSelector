@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PhotoSorterAvalonia
@@ -28,6 +29,12 @@ namespace PhotoSorterAvalonia
         private string _goodFolder = null!;
         private string _veryGoodFolder = null!;
         private string _sortedOutFolder = null!;
+        
+        /// <summary>Suppresses <see cref="WorkingFolderCombo"/> programmatic updates from applying a folder change.</summary>
+        private bool _workingFolderComboUpdating;
+        
+        /// <summary>Incremented when the working folder changes so background preload/decode work can bail out safely.</summary>
+        private int _folderSession;
         
         private readonly List<string> _photos = new();
         private int _currentIndex;
@@ -99,11 +106,138 @@ namespace PhotoSorterAvalonia
             
             HideInstructionsOnStartup();
             SetupWindowFocus();
+            SetupWorkingFolderCombo();
         }
         
         #endregion
         
         #region Initialization Methods
+        
+        /// <summary>Fills the working-folder combo with root + sort destinations under <see cref="AppConfig.SourceFolder"/>.</summary>
+        private void SetupWorkingFolderCombo()
+        {
+            _workingFolderComboUpdating = true;
+            try
+            {
+                WorkingFolderCombo.Items.Clear();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (label, path) in AppConfig.GetWorkingFolderPresetChoices())
+                {
+                    string full;
+                    try
+                    {
+                        full = Path.GetFullPath(path);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                    if (!seen.Add(full))
+                        continue;
+                    WorkingFolderCombo.Items.Add(new ComboBoxItem { Content = label, Tag = full });
+                }
+                
+                string current;
+                try
+                {
+                    current = Path.GetFullPath(_workingFolder);
+                }
+                catch
+                {
+                    current = _workingFolder;
+                }
+                
+                ComboBoxItem? match = null;
+                foreach (var o in WorkingFolderCombo.Items)
+                {
+                    if (o is ComboBoxItem item && item.Tag is string p &&
+                        string.Equals(Path.GetFullPath(p), current, StringComparison.OrdinalIgnoreCase))
+                    {
+                        match = item;
+                        break;
+                    }
+                }
+                
+                if (match is null)
+                {
+                    match = new ComboBoxItem { Content = "Other", Tag = current };
+                    WorkingFolderCombo.Items.Add(match);
+                }
+                
+                WorkingFolderCombo.SelectedItem = match;
+            }
+            finally
+            {
+                _workingFolderComboUpdating = false;
+            }
+        }
+        
+        /// <summary>Switches the working folder (photos loaded from here; destinations are under the same folder).</summary>
+        private void SetWorkingFolder(string picked)
+        {
+            if (string.IsNullOrWhiteSpace(picked))
+                return;
+            
+            string full;
+            try
+            {
+                full = Path.GetFullPath(picked);
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Invalid folder path: {ex.Message}");
+                return;
+            }
+            
+            try
+            {
+                if (string.Equals(full, Path.GetFullPath(_workingFolder), StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+            catch
+            {
+                if (string.Equals(full, _workingFolder, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+            
+            try
+            {
+                Directory.CreateDirectory(full);
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Could not use folder: {ex.Message}");
+                return;
+            }
+            
+            Interlocked.Increment(ref _folderSession);
+            
+            _workingFolder = full;
+            SessionSettings.Save(new SessionSettings.Data { WorkingFolder = _workingFolder });
+            InitializeFolderPaths();
+            CreateDestinationFolders();
+            ClearAllImageCaches();
+            _currentIndex = 0;
+            LoadPhotos();
+            
+            var folderStats = StatisticsManager.ScanFolderStatistics(_goodFolder, _veryGoodFolder, _sortedOutFolder);
+            _goodCount = folderStats.GoodCount;
+            _veryGoodCount = folderStats.VeryGoodCount;
+            _sortedOutCount = folderStats.SortedOutCount;
+            UpdateDisplay();
+            // Never clear/rebuild the combo synchronously from SelectionChanged — defer to avoid Avalonia crashes.
+            Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    SetupWorkingFolderCombo();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"SetupWorkingFolderCombo failed: {ex}");
+                }
+            }, DispatcherPriority.Background);
+        }
         
         /// <summary>
         /// Initializes the folder paths for sorting categories.

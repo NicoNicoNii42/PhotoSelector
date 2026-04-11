@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PhotoSorterAvalonia
@@ -340,16 +341,29 @@ namespace PhotoSorterAvalonia
                     
                     Task.Run(async () =>
                     {
+                        int loadSession = Volatile.Read(ref _folderSession);
                         var decodeTimer = Stopwatch.StartNew();
                         try
                         {
                             int exifOrientation = await Task.Run(() => ImageDecoder.GetExifOrientation(imagePath)).ConfigureAwait(false);
                             var bitmap = await Task.Run(() => ImageDecoder.LoadBitmapWithFallback(imagePath)).ConfigureAwait(false);
                             ImageDecoder.LogDiagnostic($"Full decode after preview hit. Path='{imagePath}', ElapsedMs={decodeTimer.ElapsedMilliseconds}");
+                            if (Volatile.Read(ref _folderSession) != loadSession)
+                            {
+                                bitmap.Dispose();
+                                return;
+                            }
+                            
                             await Dispatcher.UIThread.InvokeAsync(() =>
                             {
                                 try
                                 {
+                                    if (Volatile.Read(ref _folderSession) != loadSession)
+                                    {
+                                        bitmap.Dispose();
+                                        return;
+                                    }
+                                    
                                     FinishImageDecodeOnUiThread(imagePath, bitmap, exifOrientation, loadTimer);
                                 }
                                 catch (Exception ex)
@@ -373,6 +387,7 @@ namespace PhotoSorterAvalonia
                 
                 Task.Run(async () =>
                 {
+                    int loadSession = Volatile.Read(ref _folderSession);
                     var decodeTimer = Stopwatch.StartNew();
                     try
                     {
@@ -393,12 +408,24 @@ namespace PhotoSorterAvalonia
                         Bitmap? previewBitmap = previewTask.Result;
                         int exifOrientation = orientationTask.Result;
                         
+                        if (Volatile.Read(ref _folderSession) != loadSession)
+                        {
+                            previewBitmap?.Dispose();
+                            return;
+                        }
+                        
                         if (previewBitmap != null)
                         {
                             await Dispatcher.UIThread.InvokeAsync(() =>
                             {
                                 try
                                 {
+                                    if (Volatile.Read(ref _folderSession) != loadSession)
+                                    {
+                                        previewBitmap.Dispose();
+                                        return;
+                                    }
+                                    
                                     ApplyTransientPreviewOnUiThread(imagePath, previewBitmap, exifOrientation);
                                 }
                                 catch (Exception ex)
@@ -412,18 +439,35 @@ namespace PhotoSorterAvalonia
                         {
                             await Dispatcher.UIThread.InvokeAsync(() =>
                             {
+                                if (Volatile.Read(ref _folderSession) != loadSession)
+                                    return;
                                 if (IsStillCurrentImagePath(imagePath))
                                     ShowImagePlaceholder(imagePath);
                             });
                         }
                         
+                        if (Volatile.Read(ref _folderSession) != loadSession)
+                            return;
+                        
                         var bitmap = ImageDecoder.LoadBitmapWithFallback(imagePath);
                         ImageDecoder.LogDiagnostic($"Decode success. Path='{imagePath}', ExifOrientation={exifOrientation}, ElapsedMs={decodeTimer.ElapsedMilliseconds}");
+                        
+                        if (Volatile.Read(ref _folderSession) != loadSession)
+                        {
+                            bitmap.Dispose();
+                            return;
+                        }
                         
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             try
                             {
+                                if (Volatile.Read(ref _folderSession) != loadSession)
+                                {
+                                    bitmap.Dispose();
+                                    return;
+                                }
+                                
                                 FinishImageDecodeOnUiThread(imagePath, bitmap, exifOrientation, loadTimer);
                             }
                             catch (Exception ex)
@@ -476,10 +520,14 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void PreloadAdjacentImages()
         {
+            int session = Volatile.Read(ref _folderSession);
             Task.Run(() =>
             {
                 for (int offset = -AppConfig.PreviewPreloadRange; offset <= AppConfig.PreviewPreloadRange; offset++)
                 {
+                    if (Volatile.Read(ref _folderSession) != session)
+                        return;
+                    
                     if (offset == 0)
                         continue;
                     
@@ -510,6 +558,9 @@ namespace PhotoSorterAvalonia
                     
                     Task.Run(() =>
                     {
+                        if (Volatile.Read(ref _folderSession) != session)
+                            return;
+                        
                         var preloadTimer = Stopwatch.StartNew();
                         Bitmap? previewRaw = null;
                         try
@@ -524,12 +575,28 @@ namespace PhotoSorterAvalonia
                             return;
                         }
                         
+                        if (Volatile.Read(ref _folderSession) != session)
+                        {
+                            previewRaw?.Dispose();
+                            lock (_loadingPreviewPaths)
+                                _loadingPreviewPaths.Remove(imagePath);
+                            return;
+                        }
+                        
                         int exifOrientation = ImageDecoder.GetExifOrientation(imagePath);
                         
                         Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             try
                             {
+                                if (Volatile.Read(ref _folderSession) != session)
+                                {
+                                    previewRaw?.Dispose();
+                                    lock (_loadingPreviewPaths)
+                                        _loadingPreviewPaths.Remove(imagePath);
+                                    return;
+                                }
+                                
                                 lock (_imageCache)
                                 {
                                     if (_imageCache.ContainsKey(imagePath))

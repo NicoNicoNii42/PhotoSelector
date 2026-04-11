@@ -5,7 +5,6 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using System;
@@ -276,36 +275,14 @@ namespace PhotoSorterAvalonia
         private void Good_Click(object? sender, RoutedEventArgs e) => MoveToGood();
         private void VeryGood_Click(object? sender, RoutedEventArgs e) => MoveToVeryGood();
         
-        private async void OpenWorkingFolder_Click(object? sender, RoutedEventArgs e)
+        private void WorkingFolderCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
-            IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-            {
-                Title = "Choose folder to sort (only files directly in this folder; moves go into subfolders here)",
-                AllowMultiple = false,
-            });
-            if (folders.Count == 0)
+            if (_workingFolderComboUpdating)
                 return;
-            
-            string? picked = folders[0].TryGetLocalPath();
-            if (string.IsNullOrEmpty(picked) || !Directory.Exists(picked))
-            {
-                ShowError("Could not use the selected folder (local path unavailable).");
+            if (sender is not ComboBox cb || cb.SelectedItem is not ComboBoxItem item || item.Tag is not string path)
                 return;
-            }
-            
-            _workingFolder = Path.GetFullPath(picked);
-            SessionSettings.Save(new SessionSettings.Data { WorkingFolder = _workingFolder });
-            InitializeFolderPaths();
-            CreateDestinationFolders();
-            ClearAllImageCaches();
-            _currentIndex = 0;
-            LoadPhotos();
-            
-            var folderStats = StatisticsManager.ScanFolderStatistics(_goodFolder, _veryGoodFolder, _sortedOutFolder);
-            _goodCount = folderStats.GoodCount;
-            _veryGoodCount = folderStats.VeryGoodCount;
-            _sortedOutCount = folderStats.SortedOutCount;
-            UpdateDisplay();
+            // Defer off the selection event so SetWorkingFolder never runs inside Avalonia's combo state machine.
+            Dispatcher.UIThread.Post(() => SetWorkingFolder(path), DispatcherPriority.Background);
         }
         
         private void Quit_Click(object? sender, RoutedEventArgs e)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
@@ -161,6 +162,30 @@ namespace PhotoSorterAvalonia
         public static string GetVeryGoodFolderPath() => GetVeryGoodFolderPath(SourceFolder);
         
         public static string GetSortedOutFolderPath() => GetSortedOutFolderPath(SourceFolder);
+        
+        /// <summary>
+        /// Working-folder presets anchored at <see cref="SourceFolder"/>: the root plus each sort destination under that root.
+        /// </summary>
+        public static List<(string Label, string Path)> GetWorkingFolderPresetChoices()
+        {
+            string root;
+            try
+            {
+                root = Path.GetFullPath(SourceFolder);
+            }
+            catch
+            {
+                root = SourceFolder;
+            }
+            
+            return new List<(string Label, string Path)>
+            {
+                ("Root", root),
+                ("Good", GetGoodFolderPath(root)),
+                ("Very good", GetVeryGoodFolderPath(root)),
+                ("Sorted out", GetSortedOutFolderPath(root)),
+            };
+        }
         
         /// <summary>
         /// Validates that all configuration values are valid.
