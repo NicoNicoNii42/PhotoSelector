@@ -43,6 +43,14 @@ namespace PhotoSorterAvalonia
         private int _veryGoodCount;
         private int _sortedOutCount;
         
+        /// <summary>Top-level photo count under <see cref="AppConfig.SourceFolder"/> (stats panel Total line).</summary>
+        private int _statsPanelRootTotal;
+        
+        /// <summary>Photos moved into each bucket this session (for persistent stats merge).</summary>
+        private int _sessionMovesToGood;
+        private int _sessionMovesToVeryGood;
+        private int _sessionMovesToSortedOut;
+        
         private double _currentScale = AppConfig.DefaultZoomScale;
         private double _currentRotation = AppConfig.DefaultRotation;
         
@@ -88,16 +96,18 @@ namespace PhotoSorterAvalonia
             // Initialize folder paths first (destinations are under the working folder)
             InitializeFolderPaths();
             
-            // Load persistent statistics and merge with folder scan
+            // Load persistent statistics and merge with folder scan (buckets under source root, not nested under working folder)
             _persistentStats = StatisticsManager.LoadStatistics();
+            string statsRoot = GetStatisticsAnchorFolder();
             _persistentStats = StatisticsManager.MergeWithFolderScan(
                 _persistentStats,
-                _goodFolder,
-                _veryGoodFolder,
-                _sortedOutFolder);
+                AppConfig.GetGoodFolderPath(statsRoot),
+                AppConfig.GetVeryGoodFolderPath(statsRoot),
+                AppConfig.GetSortedOutFolderPath(statsRoot));
             
             // Initialize current session counts from folder scan
             InitializeCurrentCountsFromFolders();
+            ResetSessionMoveCounts();
             
             CreateDestinationFolders();
             LoadPhotos();
@@ -220,10 +230,7 @@ namespace PhotoSorterAvalonia
             _currentIndex = 0;
             LoadPhotos();
             
-            var folderStats = StatisticsManager.ScanFolderStatistics(_goodFolder, _veryGoodFolder, _sortedOutFolder);
-            _goodCount = folderStats.GoodCount;
-            _veryGoodCount = folderStats.VeryGoodCount;
-            _sortedOutCount = folderStats.SortedOutCount;
+            ResetSessionMoveCounts();
             UpdateDisplay();
             // Never clear/rebuild the combo synchronously from SelectionChanged — defer to avoid Avalonia crashes.
             Dispatcher.UIThread.Post(() =>
@@ -247,6 +254,42 @@ namespace PhotoSorterAvalonia
             _goodFolder = AppConfig.GetGoodFolderPath(_workingFolder);
             _veryGoodFolder = AppConfig.GetVeryGoodFolderPath(_workingFolder);
             _sortedOutFolder = AppConfig.GetSortedOutFolderPath(_workingFolder);
+        }
+        
+        /// <summary>Library root used for Good / Very good / Sorted out counts in the stats panel (preset buckets under <see cref="AppConfig.SourceFolder"/>).</summary>
+        private static string GetStatisticsAnchorFolder()
+        {
+            try
+            {
+                return Path.GetFullPath(AppConfig.SourceFolder);
+            }
+            catch
+            {
+                return AppConfig.SourceFolder;
+            }
+        }
+        
+        /// <summary>Re-reads bucket file counts under the source root (same buckets for Root / Good / Very good / Sorted out views).</summary>
+        private void RefreshStatisticsBucketCounts()
+        {
+            string anchor = GetStatisticsAnchorFolder();
+            _statsPanelRootTotal = Directory.Exists(anchor)
+                ? Directory.GetFiles(anchor, AppConfig.FileExtension).Length
+                : 0;
+            var folderStats = StatisticsManager.ScanFolderStatistics(
+                AppConfig.GetGoodFolderPath(anchor),
+                AppConfig.GetVeryGoodFolderPath(anchor),
+                AppConfig.GetSortedOutFolderPath(anchor));
+            _goodCount = folderStats.GoodCount;
+            _veryGoodCount = folderStats.VeryGoodCount;
+            _sortedOutCount = folderStats.SortedOutCount;
+        }
+        
+        private void ResetSessionMoveCounts()
+        {
+            _sessionMovesToGood = 0;
+            _sessionMovesToVeryGood = 0;
+            _sessionMovesToSortedOut = 0;
         }
         
         private static string ResolveInitialWorkingFolder(SessionSettings.Data session)
@@ -331,10 +374,7 @@ namespace PhotoSorterAvalonia
         {
             try
             {
-                var folderStats = StatisticsManager.ScanFolderStatistics(_goodFolder, _veryGoodFolder, _sortedOutFolder);
-                _goodCount = folderStats.GoodCount;
-                _veryGoodCount = folderStats.VeryGoodCount;
-                _sortedOutCount = folderStats.SortedOutCount;
+                RefreshStatisticsBucketCounts();
                 UpdateStatistics();
             }
             catch (Exception ex)
@@ -356,6 +396,7 @@ namespace PhotoSorterAvalonia
                 
                 _totalPhotos = _photos.Count;
                 ImageDecoder.LogDiagnostic($"LoadPhotos complete. WorkingFolder='{_workingFolder}', Filter='{AppConfig.FileExtension}', Total={_totalPhotos}");
+                RefreshStatisticsBucketCounts();
                 UpdateStatistics();
             }
             catch (Exception ex)
@@ -374,7 +415,7 @@ namespace PhotoSorterAvalonia
         private void UpdateStatistics()
         {
             WorkingFolderText.Text = _workingFolder;
-            StatsText.Text = $"Total: {_totalPhotos}\n" +
+            StatsText.Text = $"Total: {_statsPanelRootTotal}\n" +
                             $"Good: {_goodCount}\n" +
                             $"Very Good: {_veryGoodCount}\n" +
                             $"Sorted Out: {_sortedOutCount}";

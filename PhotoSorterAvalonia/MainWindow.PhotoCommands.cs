@@ -64,7 +64,7 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void SortOutCurrent()
         {
-            MovePhotoToFolder(_sortedOutFolder, ref _sortedOutCount, "Sorted out");
+            MovePhotoToFolder(_sortedOutFolder, "Sorted out");
         }
         
         /// <summary>
@@ -72,7 +72,7 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void MoveToGood()
         {
-            MovePhotoToFolder(_goodFolder, ref _goodCount, "Good");
+            MovePhotoToFolder(_goodFolder, "Good");
         }
         
         /// <summary>
@@ -80,16 +80,15 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void MoveToVeryGood()
         {
-            MovePhotoToFolder(_veryGoodFolder, ref _veryGoodCount, "Very Good");
+            MovePhotoToFolder(_veryGoodFolder, "Very Good");
         }
         
         /// <summary>
         /// Moves the current photo to the specified folder.
         /// </summary>
         /// <param name="destinationFolder">The destination folder path.</param>
-        /// <param name="counter">The counter to increment.</param>
         /// <param name="actionName">The name of the action for feedback.</param>
-        private void MovePhotoToFolder(string destinationFolder, ref int counter, string actionName)
+        private void MovePhotoToFolder(string destinationFolder, string actionName)
         {
             if (_currentIndex >= _photos.Count) return;
             
@@ -100,7 +99,15 @@ namespace PhotoSorterAvalonia
             try
             {
                 File.Move(currentPhoto, destination);
-                counter++;
+                
+                if (string.Equals(destinationFolder, _goodFolder, StringComparison.OrdinalIgnoreCase))
+                    _sessionMovesToGood++;
+                else if (string.Equals(destinationFolder, _veryGoodFolder, StringComparison.OrdinalIgnoreCase))
+                    _sessionMovesToVeryGood++;
+                else if (string.Equals(destinationFolder, _sortedOutFolder, StringComparison.OrdinalIgnoreCase))
+                    _sessionMovesToSortedOut++;
+                
+                RefreshStatisticsBucketCounts();
                 
                 // Clear current image source before disposing to prevent accessing disposed bitmap
                 ReplaceCurrentImageSource(null);
@@ -343,9 +350,9 @@ namespace PhotoSorterAvalonia
             // Merge current session statistics with persistent statistics
             var mergedStats = StatisticsManager.MergeStatistics(
                 _persistentStats,
-                _goodCount,
-                _veryGoodCount,
-                _sortedOutCount,
+                _sessionMovesToGood,
+                _sessionMovesToVeryGood,
+                _sessionMovesToSortedOut,
                 _totalPhotos);
             
             // Save the merged statistics
@@ -359,9 +366,9 @@ namespace PhotoSorterAvalonia
                           
                           $"📈 Current Session:\n" +
                           $"   • Total photos: {_totalPhotos}\n" +
-                          $"   • Sorted out: {_sortedOutCount}\n" +
-                          $"   • Good: {_goodCount}\n" +
-                          $"   • Very Good: {_veryGoodCount}\n\n" +
+                          $"   • Sorted out: {_sessionMovesToSortedOut}\n" +
+                          $"   • Good: {_sessionMovesToGood}\n" +
+                          $"   • Very Good: {_sessionMovesToVeryGood}\n\n" +
                           
                           $"📊 Persistent Statistics (All Sessions):\n" +
                           $"   • Total photos processed: {mergedStats.TotalPhotosProcessed}\n" +
