@@ -65,6 +65,18 @@ namespace PhotoSorterAvalonia
         public const double ZoomFactor = 1.1;
         
         /// <summary>
+        /// Trackpad/wheel zoom maps exponent = DeltaY / this value. Smaller = faster zoom
+        /// (typical wheel notch is ~120 delta units).
+        /// </summary>
+        public const double WheelScrollZoomNotchDivisor = 1.0;
+        
+        /// <summary>
+        /// Multiplier for drag-to-pan after mapping pointer movement from viewbox space (1 = default).
+        /// Increase (e.g. 1.5–2.5) if panning still feels slow.
+        /// </summary>
+        public const double PointerPanSpeedMultiplier = 2.0;
+        
+        /// <summary>
         /// Rotation step in degrees for manual rotation.
         /// Default: 90.0 (90° per rotation step)
         /// </summary>
@@ -156,6 +168,12 @@ namespace PhotoSorterAvalonia
             
             if (ZoomFactor <= 1.0)
                 throw new InvalidOperationException("ZoomFactor must be greater than 1.0");
+            
+            if (WheelScrollZoomNotchDivisor <= 0)
+                throw new InvalidOperationException("WheelScrollZoomNotchDivisor must be greater than 0");
+            
+            if (PointerPanSpeedMultiplier <= 0)
+                throw new InvalidOperationException("PointerPanSpeedMultiplier must be greater than 0");
             
             if (RotationStep <= 0 || RotationStep > 360)
                 throw new InvalidOperationException("RotationStep must be between 0 and 360 degrees");

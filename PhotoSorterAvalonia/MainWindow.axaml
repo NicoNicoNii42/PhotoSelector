@@ -9,10 +9,10 @@
     
     <Grid RowDefinitions="*,Auto" Margin="20" RowSpacing="10">
         
-        <!-- Photo Display Area with Viewbox for responsive sizing -->
-        <Border Grid.Row="0" Background="#2C2C2C" CornerRadius="10" BorderBrush="#404040" BorderThickness="2">
+        <!-- Photo Display Area with Viewbox for responsive sizing (pointer handlers on this border cover letterboxing too) -->
+        <Border x:Name="PhotoStageBorder" Grid.Row="0" Background="#2C2C2C" CornerRadius="10" BorderBrush="#404040" BorderThickness="2">
             <Viewbox x:Name="ImageContainer" Stretch="Uniform">
-                <Grid>
+                <Grid Background="Transparent">
                     <!-- Image Display with Zoom/Pan -->
                     <Image x:Name="CurrentImage" 
                            Stretch="None" 
@@ -87,6 +87,8 @@
                                     <TextBlock Text="• W: Zoom in" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• S: Zoom out" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• 0: Reset zoom" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Drag on preview: Pan (when zoomed)" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Trackpad scroll on preview: Zoom" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• H: Show/hide instructions" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Escape: Quit with statistics" FontSize="14" Foreground="White"/>
                                 </StackPanel>
