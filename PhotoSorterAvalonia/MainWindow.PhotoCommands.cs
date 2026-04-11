@@ -171,7 +171,7 @@ namespace PhotoSorterAvalonia
         ///   Q           - Rotate left (counter-clockwise)
         ///   E           - Rotate right (clockwise)
         ///   + / -       - Zoom in/out
-        ///   0           - Reset zoom
+        ///   Space           - Reset zoom
         ///   
         /// Application:
         ///   H           - Toggle help overlay
@@ -254,8 +254,7 @@ namespace PhotoSorterAvalonia
                     e.Handled = true;
                     break;
                     
-                case Key.D0:
-                case Key.NumPad0:
+                case Key.Space:
                     ResetZoom();
                     e.Handled = true;
                     break;
