@@ -112,9 +112,9 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void CreateDestinationFolders()
         {
-            System.IO.Directory.CreateDirectory(_goodFolder);
-            System.IO.Directory.CreateDirectory(_veryGoodFolder);
-            System.IO.Directory.CreateDirectory(_sortedOutFolder);
+            Directory.CreateDirectory(_goodFolder);
+            Directory.CreateDirectory(_veryGoodFolder);
+            Directory.CreateDirectory(_sortedOutFolder);
         }
         
         /// <summary>
@@ -163,16 +163,10 @@ namespace PhotoSorterAvalonia
         {
             try
             {
-                _goodCount = System.IO.Directory.Exists(_goodFolder) ? 
-                    System.IO.Directory.GetFiles(_goodFolder, AppConfig.FileExtension).Length : 0;
-                
-                _veryGoodCount = System.IO.Directory.Exists(_veryGoodFolder) ? 
-                    System.IO.Directory.GetFiles(_veryGoodFolder, AppConfig.FileExtension).Length : 0;
-                
-                _sortedOutCount = System.IO.Directory.Exists(_sortedOutFolder) ? 
-                    System.IO.Directory.GetFiles(_sortedOutFolder, AppConfig.FileExtension).Length : 0;
-                
-                // Update display with folder-scanned counts
+                var folderStats = StatisticsManager.ScanFolderStatistics();
+                _goodCount = folderStats.GoodCount;
+                _veryGoodCount = folderStats.VeryGoodCount;
+                _sortedOutCount = folderStats.SortedOutCount;
                 UpdateStatistics();
             }
             catch (Exception ex)
@@ -189,11 +183,11 @@ namespace PhotoSorterAvalonia
             try
             {
                 _photos.Clear();
-                _photos.AddRange(System.IO.Directory.GetFiles(AppConfig.SourceFolder, AppConfig.FileExtension)
+                _photos.AddRange(Directory.GetFiles(AppConfig.SourceFolder, AppConfig.FileExtension)
                     .OrderBy(f => f));
                 
                 _totalPhotos = _photos.Count;
-                LogImageDiagnostic($"LoadPhotos complete. SourceFolder='{AppConfig.SourceFolder}', Filter='{AppConfig.FileExtension}', Total={_totalPhotos}");
+                ImageDecoder.LogDiagnostic($"LoadPhotos complete. SourceFolder='{AppConfig.SourceFolder}', Filter='{AppConfig.FileExtension}', Total={_totalPhotos}");
                 UpdateStatistics();
             }
             catch (Exception ex)
@@ -524,7 +518,7 @@ namespace PhotoSorterAvalonia
                 return;
             }
             
-            Bitmap normalized = NormalizeBitmapExifOnUiThread(decodedPreview, exifOrientation);
+            Bitmap normalized = BitmapOrientationHelper.NormalizeBitmapExifOnUiThread(decodedPreview, exifOrientation);
             if (!IsStillCurrentImagePath(imagePath))
             {
                 normalized.Dispose();
@@ -533,7 +527,7 @@ namespace PhotoSorterAvalonia
             
             ReplaceCurrentImageSource(normalized);
             AddOrReplacePreviewInCache(imagePath, normalized);
-            LogImageDiagnostic($"Preview bitmap shown. Path='{imagePath}'");
+            ImageDecoder.LogDiagnostic($"Preview bitmap shown. Path='{imagePath}'");
             ResetRotationForUprightPixels();
             ScheduleClampTranslationAfterLayout();
         }
@@ -609,7 +603,7 @@ namespace PhotoSorterAvalonia
             {
                 bool fileExists = File.Exists(imagePath);
                 long fileSize = fileExists ? new FileInfo(imagePath).Length : -1;
-                LogImageDiagnostic($"Load requested. Index={_currentIndex}, Path='{imagePath}', Exists={fileExists}, SizeBytes={fileSize}");
+                ImageDecoder.LogDiagnostic($"Load requested. Index={_currentIndex}, Path='{imagePath}', Exists={fileExists}, SizeBytes={fileSize}");
 
                 // Check if image is already in cache
                 lock (_imageCache)
@@ -625,7 +619,7 @@ namespace PhotoSorterAvalonia
                         
                         // Use cached image immediately
                         ReplaceCurrentImageSource(cachedBitmap);
-                        LogImageDiagnostic($"Cache hit. Path='{imagePath}', ElapsedMs={loadTimer.ElapsedMilliseconds}");
+                        ImageDecoder.LogDiagnostic($"Cache hit. Path='{imagePath}', ElapsedMs={loadTimer.ElapsedMilliseconds}");
                         
                         ResetRotationForUprightPixels();
                         ScheduleClampTranslationAfterLayout();
@@ -651,7 +645,7 @@ namespace PhotoSorterAvalonia
                 if (previewFromCache != null)
                 {
                     ReplaceCurrentImageSource(previewFromCache);
-                    LogImageDiagnostic($"Preview cache hit. Path='{imagePath}', ElapsedMs={loadTimer.ElapsedMilliseconds}");
+                    ImageDecoder.LogDiagnostic($"Preview cache hit. Path='{imagePath}', ElapsedMs={loadTimer.ElapsedMilliseconds}");
                     ResetRotationForUprightPixels();
                     ScheduleClampTranslationAfterLayout();
                     
@@ -660,9 +654,9 @@ namespace PhotoSorterAvalonia
                         var decodeTimer = Stopwatch.StartNew();
                         try
                         {
-                            int exifOrientation = await Task.Run(() => GetExifOrientation(imagePath)).ConfigureAwait(false);
-                            var bitmap = await Task.Run(() => LoadBitmapWithFallback(imagePath)).ConfigureAwait(false);
-                            LogImageDiagnostic($"Full decode after preview hit. Path='{imagePath}', ElapsedMs={decodeTimer.ElapsedMilliseconds}");
+                            int exifOrientation = await Task.Run(() => ImageDecoder.GetExifOrientation(imagePath)).ConfigureAwait(false);
+                            var bitmap = await Task.Run(() => ImageDecoder.LoadBitmapWithFallback(imagePath)).ConfigureAwait(false);
+                            ImageDecoder.LogDiagnostic($"Full decode after preview hit. Path='{imagePath}', ElapsedMs={decodeTimer.ElapsedMilliseconds}");
                             await Dispatcher.UIThread.InvokeAsync(() =>
                             {
                                 try
@@ -671,21 +665,21 @@ namespace PhotoSorterAvalonia
                                 }
                                 catch (Exception ex)
                                 {
-                                    LogImageDiagnostic($"UI finalize decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                    ImageDecoder.LogDiagnostic($"UI finalize decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                                     bitmap.Dispose();
                                 }
                             });
                         }
                         catch (Exception ex)
                         {
-                            LogImageDiagnostic($"Decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                            ImageDecoder.LogDiagnostic($"Decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                         }
                     });
                     return;
                 }
                 
                 // Clear previous transient preview; full decode + optional fast preview run on a worker.
-                LogImageDiagnostic($"Cache miss. Starting preview/full decode. Path='{imagePath}'");
+                ImageDecoder.LogDiagnostic($"Cache miss. Starting preview/full decode. Path='{imagePath}'");
                 ReplaceCurrentImageSource(null);
                 
                 Task.Run(async () =>
@@ -697,15 +691,15 @@ namespace PhotoSorterAvalonia
                         {
                             try
                             {
-                                return LoadBitmapWithFallback(imagePath, AppConfig.PreviewDecodeMaxWidth);
+                                return ImageDecoder.LoadBitmapWithFallback(imagePath, AppConfig.PreviewDecodeMaxWidth);
                             }
                             catch (Exception ex)
                             {
-                                LogImageDiagnostic($"Preview decode failed (full-size load continues). Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                ImageDecoder.LogDiagnostic($"Preview decode failed (full-size load continues). Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                                 return null;
                             }
                         });
-                        var orientationTask = Task.Run(() => GetExifOrientation(imagePath));
+                        var orientationTask = Task.Run(() => ImageDecoder.GetExifOrientation(imagePath));
                         await Task.WhenAll(previewTask, orientationTask).ConfigureAwait(false);
                         Bitmap? previewBitmap = previewTask.Result;
                         int exifOrientation = orientationTask.Result;
@@ -720,7 +714,7 @@ namespace PhotoSorterAvalonia
                                 }
                                 catch (Exception ex)
                                 {
-                                    LogImageDiagnostic($"Preview UI apply failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                    ImageDecoder.LogDiagnostic($"Preview UI apply failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                                     previewBitmap.Dispose();
                                 }
                             });
@@ -734,8 +728,8 @@ namespace PhotoSorterAvalonia
                             });
                         }
                         
-                        var bitmap = LoadBitmapWithFallback(imagePath);
-                        LogImageDiagnostic($"Decode success. Path='{imagePath}', ExifOrientation={exifOrientation}, ElapsedMs={decodeTimer.ElapsedMilliseconds}");
+                        var bitmap = ImageDecoder.LoadBitmapWithFallback(imagePath);
+                        ImageDecoder.LogDiagnostic($"Decode success. Path='{imagePath}', ExifOrientation={exifOrientation}, ElapsedMs={decodeTimer.ElapsedMilliseconds}");
                         
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
@@ -745,20 +739,20 @@ namespace PhotoSorterAvalonia
                             }
                             catch (Exception ex)
                             {
-                                LogImageDiagnostic($"UI finalize decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                ImageDecoder.LogDiagnostic($"UI finalize decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                                 bitmap.Dispose();
                             }
                         });
                     }
                     catch (Exception ex)
                     {
-                        LogImageDiagnostic($"Decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                        ImageDecoder.LogDiagnostic($"Decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                     }
                 });
             }
             catch (Exception ex)
             {
-                LogImageDiagnostic($"LoadImageWithCache failed before decode. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                ImageDecoder.LogDiagnostic($"LoadImageWithCache failed before decode. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                 ShowImageLoadError(imagePath);
             }
         }
@@ -831,17 +825,17 @@ namespace PhotoSorterAvalonia
                         Bitmap? previewRaw = null;
                         try
                         {
-                            previewRaw = LoadBitmapWithFallback(imagePath, AppConfig.PreviewDecodeMaxWidth);
+                            previewRaw = ImageDecoder.LoadBitmapWithFallback(imagePath, AppConfig.PreviewDecodeMaxWidth);
                         }
                         catch (Exception ex)
                         {
-                            LogImageDiagnostic($"Preview preload decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                            ImageDecoder.LogDiagnostic($"Preview preload decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                             lock (_loadingPreviewPaths)
                                 _loadingPreviewPaths.Remove(imagePath);
                             return;
                         }
                         
-                        int exifOrientation = GetExifOrientation(imagePath);
+                        int exifOrientation = ImageDecoder.GetExifOrientation(imagePath);
                         
                         Dispatcher.UIThread.InvokeAsync(() =>
                         {
@@ -865,13 +859,13 @@ namespace PhotoSorterAvalonia
                                     }
                                 }
                                 
-                                Bitmap normalized = NormalizeBitmapExifOnUiThread(previewRaw!, exifOrientation);
+                                Bitmap normalized = BitmapOrientationHelper.NormalizeBitmapExifOnUiThread(previewRaw!, exifOrientation);
                                 AddOrReplacePreviewInCache(imagePath, normalized);
-                                LogImageDiagnostic($"Preview preload cached. Path='{imagePath}', ElapsedMs={preloadTimer.ElapsedMilliseconds}");
+                                ImageDecoder.LogDiagnostic($"Preview preload cached. Path='{imagePath}', ElapsedMs={preloadTimer.ElapsedMilliseconds}");
                             }
                             catch (Exception ex)
                             {
-                                LogImageDiagnostic($"Preview preload UI failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                ImageDecoder.LogDiagnostic($"Preview preload UI failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                                 try
                                 {
                                     previewRaw?.Dispose();
@@ -892,378 +886,6 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
-        /// Reads EXIF orientation metadata from an image file using ExifTool command-line.
-        /// </summary>
-        /// <param name="imagePath">The path to the image file.</param>
-        /// <returns>The EXIF orientation value (1-8), or 1 if not found.</returns>
-        private int GetExifOrientation(string imagePath)
-        {
-            var exifTimer = Stopwatch.StartNew();
-            try
-            {
-                // Use ExifTool command-line to get numeric orientation (ArgumentList avoids shell injection via paths).
-                var startInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "exiftool",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                startInfo.ArgumentList.Add("-Orientation");
-                startInfo.ArgumentList.Add("-n");
-                startInfo.ArgumentList.Add("-s3");
-                startInfo.ArgumentList.Add(imagePath);
-
-                using var process = System.Diagnostics.Process.Start(startInfo);
-                if (process == null)
-                {
-                    LogImageDiagnostic($"ExifTool failed to start. Path='{imagePath}'");
-                    return 1;
-                }
-                
-                bool exited = process.WaitForExit(AppConfig.ExifToolTimeoutMs); // Wait up to configured timeout
-                if (!exited)
-                {
-                    KillProcessAfterWaitTimeout(process);
-                    LogImageDiagnostic($"ExifTool timeout. Path='{imagePath}', TimeoutMs={AppConfig.ExifToolTimeoutMs}");
-                    return 1;
-                }
-                
-                if (process.ExitCode == 0)
-                {
-                    string output = process.StandardOutput.ReadToEnd().Trim();
-                    if (int.TryParse(output, out int orientation) && orientation >= 1 && orientation <= 8)
-                    {
-                        LogImageDiagnostic($"Exif orientation read. Path='{imagePath}', Orientation={orientation}, ElapsedMs={exifTimer.ElapsedMilliseconds}");
-                        return orientation;
-                    }
-                }
-
-                string error = process.StandardError.ReadToEnd().Trim();
-                LogImageDiagnostic($"ExifTool returned no valid orientation. Path='{imagePath}', ExitCode={process.ExitCode}, StdErr='{error}'");
-            }
-            catch (Exception ex)
-            {
-                // Silent fallback
-                LogImageDiagnostic($"Exif orientation read failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
-            }
-            
-            return 1; // Default orientation (normal)
-        }
-
-        /// <summary>
-        /// Writes temporary diagnostics for image loading issues.
-        /// </summary>
-        private static void LogImageDiagnostic(string message)
-        {
-            Console.WriteLine($"[ImageDiag {DateTime.Now:HH:mm:ss.fff}] {message}");
-        }
-
-        /// <summary>
-        /// When <see cref="Process.WaitForExit(int)"/> times out, the child process keeps running;
-        /// disposing <see cref="Process"/> does not terminate it. Kill the tree and reap the handle.
-        /// </summary>
-        private static void KillProcessAfterWaitTimeout(Process process)
-        {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-            }
-            catch (Exception ex)
-            {
-                LogImageDiagnostic($"Failed to terminate child process after timeout. Pid={process.Id}, Error='{ex.GetType().Name}: {ex.Message}'");
-                return;
-            }
-            try
-            {
-                process.WaitForExit();
-            }
-            catch
-            {
-                // Best-effort reap after Kill.
-            }
-        }
-
-        /// <summary>
-        /// Decodes a bitmap from an in-memory buffer. The stream is not retained after construction.
-        /// </summary>
-        private static Bitmap DecodeBitmapFromBuffer(byte[] buffer, int? maxDecodeWidth = null)
-        {
-            using var ms = new MemoryStream(buffer);
-            if (maxDecodeWidth.HasValue)
-                return Bitmap.DecodeToWidth(ms, maxDecodeWidth.Value);
-            return new Bitmap(ms);
-        }
-
-        private static void TryDeleteFileIfExists(string path)
-        {
-            try
-            {
-                if (File.Exists(path))
-                {
-                    File.Delete(path);
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup.
-            }
-        }
-
-        /// <summary>
-        /// Loads bitmap using direct decode first, then falls back to ExifTool preview extraction.
-        /// </summary>
-        /// <param name="imagePath">File path to decode.</param>
-        /// <param name="maxDecodeWidth">When set, decodes via <see cref="Bitmap.DecodeToWidth"/> for a faster, smaller bitmap.</param>
-        private Bitmap LoadBitmapWithFallback(string imagePath, int? maxDecodeWidth = null)
-        {
-            try
-            {
-                using var fs = File.OpenRead(imagePath);
-                if (maxDecodeWidth.HasValue)
-                    return Bitmap.DecodeToWidth(fs, maxDecodeWidth.Value);
-                return new Bitmap(fs);
-            }
-            catch (Exception ex)
-            {
-                LogImageDiagnostic($"Direct decode failed, trying fallback preview extraction. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
-            }
-
-            if (TryLoadBitmapViaSipsConversion(imagePath, maxDecodeWidth, out var sipsBitmap))
-            {
-                return sipsBitmap!;
-            }
-
-            if (TryLoadBitmapViaExifTool(imagePath, "-PreviewImage", maxDecodeWidth, out var previewBitmap))
-            {
-                return previewBitmap!;
-            }
-
-            if (TryLoadBitmapViaExifTool(imagePath, "-JpgFromRaw", maxDecodeWidth, out var rawJpegBitmap))
-            {
-                return rawJpegBitmap!;
-            }
-
-            throw new ArgumentException("Unable to load bitmap from provided data");
-        }
-
-        /// <summary>
-        /// Attempts high-quality conversion through macOS sips and decodes the resulting JPEG.
-        /// </summary>
-        private bool TryLoadBitmapViaSipsConversion(string imagePath, int? maxDecodeWidth, out Bitmap? bitmap)
-        {
-            bitmap = null;
-            var timer = Stopwatch.StartNew();
-            string tempJpegPath = Path.Combine(Path.GetTempPath(), $"photosorter-{Guid.NewGuid():N}.jpg");
-
-            try
-            {
-                var startInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "/usr/bin/sips",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                startInfo.ArgumentList.Add("-s");
-                startInfo.ArgumentList.Add("format");
-                startInfo.ArgumentList.Add("jpeg");
-                startInfo.ArgumentList.Add(imagePath);
-                startInfo.ArgumentList.Add("--out");
-                startInfo.ArgumentList.Add(tempJpegPath);
-
-                using var process = System.Diagnostics.Process.Start(startInfo);
-                if (process == null)
-                {
-                    LogImageDiagnostic($"sips conversion failed to start. Path='{imagePath}'");
-                    return false;
-                }
-
-                // Read stdout/stderr concurrently so the child cannot deadlock on full pipe buffers while we wait.
-                var stderrTask = Task.Run(() => process.StandardError.ReadToEnd());
-                var stdoutTask = Task.Run(() => process.StandardOutput.ReadToEnd());
-                bool exited = process.WaitForExit(AppConfig.ExifToolTimeoutMs);
-                if (!exited)
-                {
-                    KillProcessAfterWaitTimeout(process);
-                    try
-                    {
-                        Task.WaitAll(new Task[] { stderrTask, stdoutTask }, millisecondsTimeout: 5000);
-                    }
-                    catch
-                    {
-                        // Best-effort wait for readers after kill.
-                    }
-
-                    TryDeleteFileIfExists(tempJpegPath);
-                    LogImageDiagnostic($"sips conversion timeout. Path='{imagePath}', TimeoutMs={AppConfig.ExifToolTimeoutMs}");
-                    return false;
-                }
-
-                string stdErr;
-                string stdOut;
-                try
-                {
-                    stdErr = stderrTask.Result.Trim();
-                    stdOut = stdoutTask.Result.Trim();
-                }
-                catch (Exception readEx)
-                {
-                    LogImageDiagnostic($"sips conversion output read failed. Path='{imagePath}', Error='{readEx.GetType().Name}: {readEx.Message}'");
-                    return false;
-                }
-
-                if (process.ExitCode != 0 || !File.Exists(tempJpegPath))
-                {
-                    LogImageDiagnostic($"sips conversion unavailable. Path='{imagePath}', ExitCode={process.ExitCode}, StdOut='{stdOut}', StdErr='{stdErr}'");
-                    return false;
-                }
-
-                byte[] bytes = File.ReadAllBytes(tempJpegPath);
-                bitmap = DecodeBitmapFromBuffer(bytes, maxDecodeWidth);
-                LogImageDiagnostic($"sips conversion success. Path='{imagePath}', OutputBytes={bytes.Length}, ElapsedMs={timer.ElapsedMilliseconds}");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LogImageDiagnostic($"sips conversion failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
-                return false;
-            }
-            finally
-            {
-                TryDeleteFileIfExists(tempJpegPath);
-            }
-        }
-
-        /// <summary>
-        /// Attempts to extract a JPEG preview using ExifTool and decode it as an Avalonia bitmap.
-        /// </summary>
-        private bool TryLoadBitmapViaExifTool(string imagePath, string exifArgument, int? maxDecodeWidth, out Bitmap? bitmap)
-        {
-            bitmap = null;
-            var timer = Stopwatch.StartNew();
-
-            try
-            {
-                var startInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "exiftool",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                startInfo.ArgumentList.Add("-b");
-                startInfo.ArgumentList.Add(exifArgument);
-                startInfo.ArgumentList.Add(imagePath);
-
-                using var process = System.Diagnostics.Process.Start(startInfo);
-                if (process == null)
-                {
-                    LogImageDiagnostic($"Fallback decode failed to start exiftool. Path='{imagePath}', Mode='{exifArgument}'");
-                    return false;
-                }
-
-                var memoryStream = new MemoryStream();
-                try
-                {
-                    var stdoutTask = Task.Run(() =>
-                    {
-                        try
-                        {
-                            process.StandardOutput.BaseStream.CopyTo(memoryStream);
-                        }
-                        catch (IOException)
-                        {
-                            // Pipe closed after kill or process exit.
-                        }
-                        catch (ObjectDisposedException)
-                        {
-                        }
-                    });
-                    var stderrTask = Task.Run(() =>
-                    {
-                        try
-                        {
-                            return process.StandardError.ReadToEnd();
-                        }
-                        catch
-                        {
-                            return string.Empty;
-                        }
-                    });
-
-                    bool exited = process.WaitForExit(AppConfig.ExifToolTimeoutMs);
-                    if (!exited)
-                    {
-                        KillProcessAfterWaitTimeout(process);
-                        try
-                        {
-                            stdoutTask.Wait(TimeSpan.FromSeconds(30));
-                        }
-                        catch
-                        {
-                        }
-
-                        try
-                        {
-                            stderrTask.Wait(TimeSpan.FromSeconds(5));
-                        }
-                        catch
-                        {
-                        }
-
-                        LogImageDiagnostic($"Fallback decode timeout. Path='{imagePath}', Mode='{exifArgument}', TimeoutMs={AppConfig.ExifToolTimeoutMs}");
-                        return false;
-                    }
-
-                    try
-                    {
-                        stdoutTask.Wait();
-                    }
-                    catch
-                    {
-                    }
-
-                    string stdErr = string.Empty;
-                    try
-                    {
-                        stderrTask.Wait();
-                        stdErr = stderrTask.Result.Trim();
-                    }
-                    catch
-                    {
-                    }
-
-                    if (process.ExitCode != 0 || memoryStream.Length == 0)
-                    {
-                        LogImageDiagnostic($"Fallback decode unavailable. Path='{imagePath}', Mode='{exifArgument}', ExitCode={process.ExitCode}, Bytes={memoryStream.Length}, StdErr='{stdErr}'");
-                        return false;
-                    }
-
-                    byte[] buffer = memoryStream.ToArray();
-                    bitmap = DecodeBitmapFromBuffer(buffer, maxDecodeWidth);
-                    LogImageDiagnostic($"Fallback decode success. Path='{imagePath}', Mode='{exifArgument}', Bytes={buffer.Length}, ElapsedMs={timer.ElapsedMilliseconds}");
-                    return true;
-                }
-                finally
-                {
-                    memoryStream.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                LogImageDiagnostic($"Fallback decode failed. Path='{imagePath}', Mode='{exifArgument}', Error='{ex.GetType().Name}: {ex.Message}'");
-                return false;
-            }
-        }
-        
-        /// <summary>
         /// EXIF orientation is baked into decoded bitmaps on the UI thread; reset transform rotation for the new image.
         /// </summary>
         private void ResetRotationForUprightPixels()
@@ -1272,82 +894,13 @@ namespace PhotoSorterAvalonia
             ApplyRotation();
         }
         
-        /// <summary>
-        /// Normalizes EXIF orientations 1/3/6/8 into upright pixel data. Must run on the UI thread (RenderTargetBitmap.Render).
-        /// </summary>
-        private static Bitmap NormalizeBitmapExifOnUiThread(Bitmap decoded, int exifOrientation)
-        {
-            double angle = exifOrientation switch
-            {
-                1 => 0,
-                3 => 180,
-                6 => 90,
-                8 => 270,
-                _ => 0
-            };
-            
-            if (angle == 0)
-                return decoded;
-            
-            try
-            {
-                var baked = BakeOrientationByRendering(decoded, angle);
-                decoded.Dispose();
-                return baked;
-            }
-            catch (Exception ex)
-            {
-                LogImageDiagnostic($"Bake EXIF orientation failed; showing decoded pixels. Orientation={exifOrientation}, Error='{ex.Message}'");
-                return decoded;
-            }
-        }
-        
-        /// <summary>
-        /// Renders a rotated copy of the bitmap (same angles as the former EXIF RenderTransform mapping).
-        /// </summary>
-        private static Bitmap BakeOrientationByRendering(Bitmap source, double angleDeg)
-        {
-            var ps = source.PixelSize;
-            bool swapDimensions = angleDeg is 90 or 270;
-            int outW = swapDimensions ? ps.Height : ps.Width;
-            int outH = swapDimensions ? ps.Width : ps.Height;
-            
-            var imageControl = new Image
-            {
-                Source = source,
-                Stretch = Stretch.None,
-                Width = ps.Width,
-                Height = ps.Height,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            imageControl.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
-            imageControl.RenderTransform = new RotateTransform { Angle = angleDeg };
-            
-            var container = new Grid
-            {
-                Width = outW,
-                Height = outH,
-                Background = Brushes.Transparent,
-            };
-            container.Children.Add(imageControl);
-            
-            var layoutSize = new Size(outW, outH);
-            container.Measure(layoutSize);
-            container.Arrange(new Rect(layoutSize));
-            container.UpdateLayout();
-            
-            var rtb = new RenderTargetBitmap(new PixelSize(outW, outH), source.Dpi);
-            rtb.Render(container);
-            return rtb;
-        }
         
         /// <summary>
         /// Caches the EXIF-normalized bitmap and assigns it to the view when it is still the current file.
         /// </summary>
         private void FinishImageDecodeOnUiThread(string imagePath, Bitmap decoded, int exifOrientation, Stopwatch? loadTimer)
         {
-            Bitmap ready = NormalizeBitmapExifOnUiThread(decoded, exifOrientation);
+            Bitmap ready = BitmapOrientationHelper.NormalizeBitmapExifOnUiThread(decoded, exifOrientation);
             
             lock (_imageCache)
             {
@@ -1372,7 +925,7 @@ namespace PhotoSorterAvalonia
                 : null;
             if (!string.Equals(currentExpectedPath, imagePath, StringComparison.Ordinal))
             {
-                LogImageDiagnostic($"Stale UI update candidate. Requested='{imagePath}', CurrentExpected='{currentExpectedPath}'");
+                ImageDecoder.LogDiagnostic($"Stale UI update candidate. Requested='{imagePath}', CurrentExpected='{currentExpectedPath}'");
                 RemovePreviewForPath(imagePath);
                 return;
             }
@@ -1381,7 +934,7 @@ namespace PhotoSorterAvalonia
             RemovePreviewForPath(imagePath);
             if (loadTimer != null)
             {
-                LogImageDiagnostic($"UI image source set. Path='{imagePath}', TotalElapsedMs={loadTimer.ElapsedMilliseconds}");
+                ImageDecoder.LogDiagnostic($"UI image source set. Path='{imagePath}', TotalElapsedMs={loadTimer.ElapsedMilliseconds}");
             }
             
             ResetRotationForUprightPixels();
@@ -1894,7 +1447,11 @@ namespace PhotoSorterAvalonia
         private void SortOut_Click(object? sender, RoutedEventArgs e) => SortOutCurrent();
         private void Good_Click(object? sender, RoutedEventArgs e) => MoveToGood();
         private void VeryGood_Click(object? sender, RoutedEventArgs e) => MoveToVeryGood();
-        private void Quit_Click(object? sender, RoutedEventArgs e) { ShowFinalStatistics(); Close(); }
+        private void Quit_Click(object? sender, RoutedEventArgs e)
+        {
+            ShowFinalStatistics();
+            Close();
+        }
         
         private void StartSorting_Click(object? sender, RoutedEventArgs e)
         {
@@ -1909,6 +1466,36 @@ namespace PhotoSorterAvalonia
         #endregion
         
         #region Utility Methods
+        
+        private void ShowTextDialog(string title, string text, double width, double height, bool scroll)
+        {
+            var textBlock = new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap,
+            };
+            if (scroll)
+            {
+                textBlock.HorizontalAlignment = HorizontalAlignment.Left;
+                textBlock.VerticalAlignment = VerticalAlignment.Top;
+                textBlock.Margin = new Thickness(20);
+            }
+            else
+            {
+                textBlock.HorizontalAlignment = HorizontalAlignment.Center;
+                textBlock.VerticalAlignment = VerticalAlignment.Center;
+            }
+
+            object content = scroll ? new ScrollViewer { Content = textBlock } : textBlock;
+            var dialog = new Window
+            {
+                Title = title,
+                Width = width,
+                Height = height,
+                Content = content,
+            };
+            dialog.ShowDialog(this);
+        }
         
         /// <summary>
         /// Shows final statistics in a dialog window, including persistent statistics.
@@ -1951,49 +1538,16 @@ namespace PhotoSorterAvalonia
                           $"💾 Statistics saved to:\n" +
                           $"   {StatisticsManager.GetStatisticsFilePath()}";
             
-            var dialog = new Window()
-            {
-                Title = "Photo Sorter - Complete",
-                Width = 600,
-                Height = 450,
-                Content = new ScrollViewer
-                {
-                    Content = new TextBlock 
-                    { 
-                        Text = stats,
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
-                        TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                        Margin = new Thickness(20)
-                    }
-                }
-            };
-            dialog.ShowDialog(this);
+            ShowTextDialog("Photo Sorter - Complete", stats, 600, 450, scroll: true);
         }
         
         /// <summary>
         /// Shows an error message in a dialog window.
         /// </summary>
         /// <param name="message">The error message to display.</param>
-        private void ShowError(string message)
-        {
-            var dialog = new Window()
-            {
-                Title = "Error",
-                Width = 400,
-                Height = 200,
-                Content = new TextBlock 
-                { 
-                    Text = message,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                    TextWrapping = Avalonia.Media.TextWrapping.Wrap
-                }
-            };
-            dialog.ShowDialog(this);
-        }
+        private void ShowError(string message) =>
+            ShowTextDialog("Error", message, 400, 200, scroll: false);
         
         #endregion
     }
 }
-               
