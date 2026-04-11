@@ -50,10 +50,14 @@ namespace PhotoSorterAvalonia
         // Persistent statistics
         private StatisticsManager.StatisticsData _persistentStats = null!;
         
-        // Image cache for preloading with LRU eviction
+        // Full-resolution cache (small LRU); preview cache (larger LRU) for fast navigation
         private readonly Dictionary<string, Bitmap> _imageCache = new();
         private readonly LinkedList<string> _lruList = new(); // Most recent at front, least recent at back
         private readonly HashSet<string> _loadingImages = new();
+        
+        private readonly Dictionary<string, Bitmap> _previewCache = new();
+        private readonly LinkedList<string> _previewLruList = new();
+        private readonly HashSet<string> _loadingPreviewPaths = new();
         
         #endregion
         
@@ -392,11 +396,150 @@ namespace PhotoSorterAvalonia
         private void ShowCompletionMessage()
         {
             FileText.Text = "All photos sorted!";
-            CurrentImage.Source = null;
+            ReplaceCurrentImageSource(null);
         }
         
         /// <summary>
-        /// Shows a placeholder or low-resolution preview of the image.
+        /// Swaps the image control source and disposes the previous bitmap only when it is not held in a cache.
+        /// </summary>
+        private void ReplaceCurrentImageSource(IImage? newSource)
+        {
+            var old = CurrentImage.Source;
+            CurrentImage.Source = newSource;
+            if (old is Bitmap oldBmp && !IsBitmapHeldByAnyCache(oldBmp))
+                oldBmp.Dispose();
+        }
+        
+        private bool IsBitmapHeldByAnyCache(Bitmap bmp)
+        {
+            lock (_imageCache)
+            {
+                foreach (var kv in _imageCache)
+                {
+                    if (ReferenceEquals(kv.Value, bmp))
+                        return true;
+                }
+            }
+            lock (_previewCache)
+            {
+                foreach (var kv in _previewCache)
+                {
+                    if (ReferenceEquals(kv.Value, bmp))
+                        return true;
+                }
+            }
+            return false;
+        }
+        
+        private bool IsStillCurrentImagePath(string imagePath)
+        {
+            string? expected = _currentIndex >= 0 && _currentIndex < _photos.Count
+                ? _photos[_currentIndex]
+                : null;
+            return string.Equals(expected, imagePath, StringComparison.Ordinal);
+        }
+        
+        /// <summary>
+        /// Stores an EXIF-normalized preview bitmap (same instance may be shown on <see cref="CurrentImage"/>).
+        /// </summary>
+        private void AddOrReplacePreviewInCache(string imagePath, Bitmap normalizedBitmap)
+        {
+            lock (_previewCache)
+            {
+                if (_previewCache.TryGetValue(imagePath, out var previous) && !ReferenceEquals(previous, normalizedBitmap))
+                {
+                    if (!ReferenceEquals(CurrentImage.Source, previous))
+                        previous.Dispose();
+                }
+                
+                _previewCache[imagePath] = normalizedBitmap;
+                lock (_previewLruList)
+                {
+                    _previewLruList.Remove(imagePath);
+                    _previewLruList.AddFirst(imagePath);
+                }
+                
+                EnforcePreviewCacheSizeLimit();
+            }
+        }
+        
+        private void EnforcePreviewCacheSizeLimit()
+        {
+            lock (_previewCache)
+            {
+                lock (_previewLruList)
+                {
+                    while (_previewCache.Count > AppConfig.MaxPreviewCacheSize && _previewLruList.Last != null)
+                    {
+                        string victim = _previewLruList.Last.Value;
+                        if (!_previewCache.TryGetValue(victim, out var bmp))
+                        {
+                            _previewLruList.RemoveLast();
+                            continue;
+                        }
+                        
+                        if (ReferenceEquals(CurrentImage.Source, bmp))
+                        {
+                            _previewLruList.RemoveLast();
+                            _previewLruList.AddFirst(victim);
+                            if (_previewLruList.Last != null &&
+                                string.Equals(_previewLruList.Last.Value, victim, StringComparison.Ordinal))
+                                return;
+                            continue;
+                        }
+                        
+                        bmp.Dispose();
+                        _previewCache.Remove(victim);
+                        _previewLruList.RemoveLast();
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Drops a preview entry after the full-resolution image is cached or the file is gone.
+        /// </summary>
+        private void RemovePreviewForPath(string imagePath)
+        {
+            lock (_previewCache)
+            {
+                if (!_previewCache.TryGetValue(imagePath, out var bmp))
+                    return;
+                if (!ReferenceEquals(CurrentImage.Source, bmp))
+                    bmp.Dispose();
+                _previewCache.Remove(imagePath);
+                lock (_previewLruList)
+                    _previewLruList.Remove(imagePath);
+            }
+        }
+        
+        /// <summary>
+        /// Shows a downscaled, EXIF-corrected preview before the full decode finishes and registers it in <see cref="_previewCache"/>.
+        /// </summary>
+        private void ApplyTransientPreviewOnUiThread(string imagePath, Bitmap decodedPreview, int exifOrientation)
+        {
+            if (!IsStillCurrentImagePath(imagePath))
+            {
+                decodedPreview.Dispose();
+                return;
+            }
+            
+            Bitmap normalized = NormalizeBitmapExifOnUiThread(decodedPreview, exifOrientation);
+            if (!IsStillCurrentImagePath(imagePath))
+            {
+                normalized.Dispose();
+                return;
+            }
+            
+            ReplaceCurrentImageSource(normalized);
+            AddOrReplacePreviewInCache(imagePath, normalized);
+            LogImageDiagnostic($"Preview bitmap shown. Path='{imagePath}'");
+            ResetRotationForUprightPixels();
+            ScheduleClampTranslationAfterLayout();
+        }
+        
+        /// <summary>
+        /// Shows a placeholder when no fast preview decode is available.
         /// </summary>
         /// <param name="imagePath">The path to the image file.</param>
         private void ShowImagePlaceholder(string imagePath)
@@ -437,7 +580,7 @@ namespace PhotoSorterAvalonia
                 }
                 
                 var drawingImage = new DrawingImage(drawing);
-                CurrentImage.Source = drawingImage;
+                ReplaceCurrentImageSource(drawingImage);
             }
             catch
             {
@@ -481,7 +624,7 @@ namespace PhotoSorterAvalonia
                         }
                         
                         // Use cached image immediately
-                        CurrentImage.Source = cachedBitmap;
+                        ReplaceCurrentImageSource(cachedBitmap);
                         LogImageDiagnostic($"Cache hit. Path='{imagePath}', ElapsedMs={loadTimer.ElapsedMilliseconds}");
                         
                         ResetRotationForUprightPixels();
@@ -491,21 +634,110 @@ namespace PhotoSorterAvalonia
                     }
                 }
                 
-                // Show placeholder while loading
-                LogImageDiagnostic($"Cache miss. Showing placeholder. Path='{imagePath}'");
-                ShowImagePlaceholder(imagePath);
+                Bitmap? previewFromCache = null;
+                lock (_previewCache)
+                {
+                    if (_previewCache.TryGetValue(imagePath, out var cachedPreview))
+                    {
+                        previewFromCache = cachedPreview;
+                        lock (_previewLruList)
+                        {
+                            _previewLruList.Remove(imagePath);
+                            _previewLruList.AddFirst(imagePath);
+                        }
+                    }
+                }
                 
-                // Load image in background and cache it
-                Task.Run(() =>
+                if (previewFromCache != null)
+                {
+                    ReplaceCurrentImageSource(previewFromCache);
+                    LogImageDiagnostic($"Preview cache hit. Path='{imagePath}', ElapsedMs={loadTimer.ElapsedMilliseconds}");
+                    ResetRotationForUprightPixels();
+                    ScheduleClampTranslationAfterLayout();
+                    
+                    Task.Run(async () =>
+                    {
+                        var decodeTimer = Stopwatch.StartNew();
+                        try
+                        {
+                            int exifOrientation = await Task.Run(() => GetExifOrientation(imagePath)).ConfigureAwait(false);
+                            var bitmap = await Task.Run(() => LoadBitmapWithFallback(imagePath)).ConfigureAwait(false);
+                            LogImageDiagnostic($"Full decode after preview hit. Path='{imagePath}', ElapsedMs={decodeTimer.ElapsedMilliseconds}");
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                try
+                                {
+                                    FinishImageDecodeOnUiThread(imagePath, bitmap, exifOrientation, loadTimer);
+                                }
+                                catch (Exception ex)
+                                {
+                                    LogImageDiagnostic($"UI finalize decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                    bitmap.Dispose();
+                                }
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            LogImageDiagnostic($"Decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                        }
+                    });
+                    return;
+                }
+                
+                // Clear previous transient preview; full decode + optional fast preview run on a worker.
+                LogImageDiagnostic($"Cache miss. Starting preview/full decode. Path='{imagePath}'");
+                ReplaceCurrentImageSource(null);
+                
+                Task.Run(async () =>
                 {
                     var decodeTimer = Stopwatch.StartNew();
                     try
                     {
+                        var previewTask = Task.Run(() =>
+                        {
+                            try
+                            {
+                                return LoadBitmapWithFallback(imagePath, AppConfig.PreviewDecodeMaxWidth);
+                            }
+                            catch (Exception ex)
+                            {
+                                LogImageDiagnostic($"Preview decode failed (full-size load continues). Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                return null;
+                            }
+                        });
+                        var orientationTask = Task.Run(() => GetExifOrientation(imagePath));
+                        await Task.WhenAll(previewTask, orientationTask).ConfigureAwait(false);
+                        Bitmap? previewBitmap = previewTask.Result;
+                        int exifOrientation = orientationTask.Result;
+                        
+                        if (previewBitmap != null)
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                try
+                                {
+                                    ApplyTransientPreviewOnUiThread(imagePath, previewBitmap, exifOrientation);
+                                }
+                                catch (Exception ex)
+                                {
+                                    LogImageDiagnostic($"Preview UI apply failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                    previewBitmap.Dispose();
+                                }
+                            });
+                        }
+                        else
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                if (IsStillCurrentImagePath(imagePath))
+                                    ShowImagePlaceholder(imagePath);
+                            });
+                        }
+                        
                         var bitmap = LoadBitmapWithFallback(imagePath);
-                        int exifOrientation = GetExifOrientation(imagePath);
                         LogImageDiagnostic($"Decode success. Path='{imagePath}', ExifOrientation={exifOrientation}, ElapsedMs={decodeTimer.ElapsedMilliseconds}");
                         
-                        Dispatcher.UIThread.InvokeAsync(() =>
+                        await Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             try
                             {
@@ -520,7 +752,6 @@ namespace PhotoSorterAvalonia
                     }
                     catch (Exception ex)
                     {
-                        // If loading fails, keep placeholder
                         LogImageDiagnostic($"Decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
                     }
                 });
@@ -541,7 +772,7 @@ namespace PhotoSorterAvalonia
             {
                 lock (_lruList)
                 {
-                    while (_imageCache.Count > AppConfig.MaxCacheSize && _lruList.Count > 0)
+                    while (_imageCache.Count > AppConfig.MaxFullImageCacheSize && _lruList.Count > 0)
                     {
                         // Remove least recently used item (from the back of the list)
                         string lruKey = _lruList.Last!.Value;
@@ -558,85 +789,104 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
-        /// Preloads adjacent images (next and previous 2) in the background.
+        /// Preloads downscaled previews for a wide window around the current index (full-res loads happen on demand).
         /// </summary>
         private void PreloadAdjacentImages()
         {
             Task.Run(() =>
             {
-                for (int offset = -AppConfig.PreloadRange; offset <= AppConfig.PreloadRange; offset++)
+                for (int offset = -AppConfig.PreviewPreloadRange; offset <= AppConfig.PreviewPreloadRange; offset++)
                 {
-                    if (offset == 0) continue; // Skip current image
+                    if (offset == 0)
+                        continue;
                     
                     int targetIndex = _currentIndex + offset;
-                    if (targetIndex >= 0 && targetIndex < _photos.Count)
+                    if (targetIndex < 0 || targetIndex >= _photos.Count)
+                        continue;
+                    
+                    string imagePath = _photos[targetIndex];
+                    
+                    lock (_imageCache)
                     {
-                        string imagePath = _photos[targetIndex];
-                        
-                        // Check if already cached or loading
-                        lock (_imageCache)
+                        if (_imageCache.ContainsKey(imagePath))
+                            continue;
+                    }
+                    
+                    lock (_previewCache)
+                    {
+                        if (_previewCache.ContainsKey(imagePath))
+                            continue;
+                    }
+                    
+                    lock (_loadingPreviewPaths)
+                    {
+                        if (_loadingPreviewPaths.Contains(imagePath))
+                            continue;
+                        _loadingPreviewPaths.Add(imagePath);
+                    }
+                    
+                    Task.Run(() =>
+                    {
+                        var preloadTimer = Stopwatch.StartNew();
+                        Bitmap? previewRaw = null;
+                        try
                         {
-                            if (_imageCache.ContainsKey(imagePath))
-                                continue;
+                            previewRaw = LoadBitmapWithFallback(imagePath, AppConfig.PreviewDecodeMaxWidth);
+                        }
+                        catch (Exception ex)
+                        {
+                            LogImageDiagnostic($"Preview preload decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                            lock (_loadingPreviewPaths)
+                                _loadingPreviewPaths.Remove(imagePath);
+                            return;
                         }
                         
-                        lock (_loadingImages)
-                        {
-                            if (_loadingImages.Contains(imagePath))
-                                continue;
-                            
-                            _loadingImages.Add(imagePath);
-                        }
+                        int exifOrientation = GetExifOrientation(imagePath);
                         
-                        // Load and cache in background (EXIF bake runs on UI thread; see FinishImageDecodeOnUiThread).
-                        Task.Run(() =>
+                        Dispatcher.UIThread.InvokeAsync(() =>
                         {
-                            var preloadTimer = Stopwatch.StartNew();
                             try
                             {
-                                var bitmap = LoadBitmapWithFallback(imagePath);
-                                int exifOrientation = GetExifOrientation(imagePath);
-
-                                Dispatcher.UIThread.InvokeAsync(() =>
+                                lock (_imageCache)
                                 {
-                                    try
+                                    if (_imageCache.ContainsKey(imagePath))
                                     {
-                                        lock (_imageCache)
-                                        {
-                                            if (_imageCache.ContainsKey(imagePath))
-                                            {
-                                                bitmap.Dispose();
-                                                return;
-                                            }
-                                        }
-
-                                        FinishImageDecodeOnUiThread(imagePath, bitmap, exifOrientation, null);
-                                        LogImageDiagnostic($"Preload success. Path='{imagePath}', ElapsedMs={preloadTimer.ElapsedMilliseconds}");
+                                        previewRaw!.Dispose();
+                                        return;
                                     }
-                                    catch (Exception ex)
+                                }
+                                
+                                lock (_previewCache)
+                                {
+                                    if (_previewCache.ContainsKey(imagePath))
                                     {
-                                        LogImageDiagnostic($"Preload UI finalize failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
-                                        bitmap.Dispose();
+                                        previewRaw!.Dispose();
+                                        return;
                                     }
-                                    finally
-                                    {
-                                        lock (_loadingImages)
-                                        {
-                                            _loadingImages.Remove(imagePath);
-                                        }
-                                    }
-                                });
+                                }
+                                
+                                Bitmap normalized = NormalizeBitmapExifOnUiThread(previewRaw!, exifOrientation);
+                                AddOrReplacePreviewInCache(imagePath, normalized);
+                                LogImageDiagnostic($"Preview preload cached. Path='{imagePath}', ElapsedMs={preloadTimer.ElapsedMilliseconds}");
                             }
                             catch (Exception ex)
                             {
-                                LogImageDiagnostic($"Preload failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
-                                lock (_loadingImages)
+                                LogImageDiagnostic($"Preview preload UI failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                try
                                 {
-                                    _loadingImages.Remove(imagePath);
+                                    previewRaw?.Dispose();
+                                }
+                                catch (ObjectDisposedException)
+                                {
                                 }
                             }
+                            finally
+                            {
+                                lock (_loadingPreviewPaths)
+                                    _loadingPreviewPaths.Remove(imagePath);
+                            }
                         });
-                    }
+                    });
                 }
             });
         }
@@ -741,9 +991,11 @@ namespace PhotoSorterAvalonia
         /// <summary>
         /// Decodes a bitmap from an in-memory buffer. The stream is not retained after construction.
         /// </summary>
-        private static Bitmap DecodeBitmapFromBuffer(byte[] buffer)
+        private static Bitmap DecodeBitmapFromBuffer(byte[] buffer, int? maxDecodeWidth = null)
         {
             using var ms = new MemoryStream(buffer);
+            if (maxDecodeWidth.HasValue)
+                return Bitmap.DecodeToWidth(ms, maxDecodeWidth.Value);
             return new Bitmap(ms);
         }
 
@@ -765,28 +1017,33 @@ namespace PhotoSorterAvalonia
         /// <summary>
         /// Loads bitmap using direct decode first, then falls back to ExifTool preview extraction.
         /// </summary>
-        private Bitmap LoadBitmapWithFallback(string imagePath)
+        /// <param name="imagePath">File path to decode.</param>
+        /// <param name="maxDecodeWidth">When set, decodes via <see cref="Bitmap.DecodeToWidth"/> for a faster, smaller bitmap.</param>
+        private Bitmap LoadBitmapWithFallback(string imagePath, int? maxDecodeWidth = null)
         {
             try
             {
-                return new Bitmap(imagePath);
+                using var fs = File.OpenRead(imagePath);
+                if (maxDecodeWidth.HasValue)
+                    return Bitmap.DecodeToWidth(fs, maxDecodeWidth.Value);
+                return new Bitmap(fs);
             }
             catch (Exception ex)
             {
                 LogImageDiagnostic($"Direct decode failed, trying fallback preview extraction. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
             }
 
-            if (TryLoadBitmapViaSipsConversion(imagePath, out var sipsBitmap))
+            if (TryLoadBitmapViaSipsConversion(imagePath, maxDecodeWidth, out var sipsBitmap))
             {
                 return sipsBitmap!;
             }
 
-            if (TryLoadBitmapViaExifTool(imagePath, "-PreviewImage", out var previewBitmap))
+            if (TryLoadBitmapViaExifTool(imagePath, "-PreviewImage", maxDecodeWidth, out var previewBitmap))
             {
                 return previewBitmap!;
             }
 
-            if (TryLoadBitmapViaExifTool(imagePath, "-JpgFromRaw", out var rawJpegBitmap))
+            if (TryLoadBitmapViaExifTool(imagePath, "-JpgFromRaw", maxDecodeWidth, out var rawJpegBitmap))
             {
                 return rawJpegBitmap!;
             }
@@ -797,7 +1054,7 @@ namespace PhotoSorterAvalonia
         /// <summary>
         /// Attempts high-quality conversion through macOS sips and decodes the resulting JPEG.
         /// </summary>
-        private bool TryLoadBitmapViaSipsConversion(string imagePath, out Bitmap? bitmap)
+        private bool TryLoadBitmapViaSipsConversion(string imagePath, int? maxDecodeWidth, out Bitmap? bitmap)
         {
             bitmap = null;
             var timer = Stopwatch.StartNew();
@@ -868,7 +1125,7 @@ namespace PhotoSorterAvalonia
                 }
 
                 byte[] bytes = File.ReadAllBytes(tempJpegPath);
-                bitmap = DecodeBitmapFromBuffer(bytes);
+                bitmap = DecodeBitmapFromBuffer(bytes, maxDecodeWidth);
                 LogImageDiagnostic($"sips conversion success. Path='{imagePath}', OutputBytes={bytes.Length}, ElapsedMs={timer.ElapsedMilliseconds}");
                 return true;
             }
@@ -886,7 +1143,7 @@ namespace PhotoSorterAvalonia
         /// <summary>
         /// Attempts to extract a JPEG preview using ExifTool and decode it as an Avalonia bitmap.
         /// </summary>
-        private bool TryLoadBitmapViaExifTool(string imagePath, string exifArgument, out Bitmap? bitmap)
+        private bool TryLoadBitmapViaExifTool(string imagePath, string exifArgument, int? maxDecodeWidth, out Bitmap? bitmap)
         {
             bitmap = null;
             var timer = Stopwatch.StartNew();
@@ -990,7 +1247,7 @@ namespace PhotoSorterAvalonia
                     }
 
                     byte[] buffer = memoryStream.ToArray();
-                    bitmap = DecodeBitmapFromBuffer(buffer);
+                    bitmap = DecodeBitmapFromBuffer(buffer, maxDecodeWidth);
                     LogImageDiagnostic($"Fallback decode success. Path='{imagePath}', Mode='{exifArgument}', Bytes={buffer.Length}, ElapsedMs={timer.ElapsedMilliseconds}");
                     return true;
                 }
@@ -1116,10 +1373,12 @@ namespace PhotoSorterAvalonia
             if (!string.Equals(currentExpectedPath, imagePath, StringComparison.Ordinal))
             {
                 LogImageDiagnostic($"Stale UI update candidate. Requested='{imagePath}', CurrentExpected='{currentExpectedPath}'");
+                RemovePreviewForPath(imagePath);
                 return;
             }
             
-            CurrentImage.Source = ready;
+            ReplaceCurrentImageSource(ready);
+            RemovePreviewForPath(imagePath);
             if (loadTimer != null)
             {
                 LogImageDiagnostic($"UI image source set. Path='{imagePath}', TotalElapsedMs={loadTimer.ElapsedMilliseconds}");
@@ -1463,7 +1722,7 @@ namespace PhotoSorterAvalonia
                 counter++;
                 
                 // Clear current image source before disposing to prevent accessing disposed bitmap
-                CurrentImage.Source = null;
+                ReplaceCurrentImageSource(null);
                 
                 // Remove from cache and LRU list
                 lock (_imageCache)
@@ -1485,6 +1744,13 @@ namespace PhotoSorterAvalonia
                 {
                     _loadingImages.Remove(currentPhoto);
                 }
+                
+                lock (_loadingPreviewPaths)
+                {
+                    _loadingPreviewPaths.Remove(currentPhoto);
+                }
+                
+                RemovePreviewForPath(currentPhoto);
                 
                 // Remove the moved photo from the list
                 _photos.RemoveAt(_currentIndex);

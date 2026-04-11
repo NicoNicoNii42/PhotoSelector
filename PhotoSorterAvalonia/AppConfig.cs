@@ -99,16 +99,25 @@ namespace PhotoSorterAvalonia
         // ============================================
         
         /// <summary>
-        /// Maximum number of images to keep in RAM cache.
-        /// Default: 20
+        /// Maximum decode width for the fast first-pass preview while the full-resolution image loads.
+        /// Smaller values decode faster; larger values look sharper during the handoff.
         /// </summary>
-        public const int MaxCacheSize = 20;
+        public const int PreviewDecodeMaxWidth = 1920;
         
         /// <summary>
-        /// Number of adjacent images to preload (before and after current).
-        /// Default: 2
+        /// Maximum number of full-resolution decoded images in RAM (LRU). Keep small; previews cover ahead/behind navigation.
         /// </summary>
-        public const int PreloadRange = 2;
+        public const int MaxFullImageCacheSize = 8;
+        
+        /// <summary>
+        /// Maximum number of downscaled preview bitmaps in RAM (LRU). Preload fills this ring around the current index.
+        /// </summary>
+        public const int MaxPreviewCacheSize = 28;
+        
+        /// <summary>
+        /// How far ahead and behind the current photo to prefetch preview bitmaps into <see cref="MaxPreviewCacheSize"/>.
+        /// </summary>
+        public const int PreviewPreloadRange = 15;
         
         // ============================================
         // UI Configuration
@@ -178,11 +187,14 @@ namespace PhotoSorterAvalonia
             if (RotationStep <= 0 || RotationStep > 360)
                 throw new InvalidOperationException("RotationStep must be between 0 and 360 degrees");
             
-            if (MaxCacheSize <= 0)
-                throw new InvalidOperationException("MaxCacheSize must be greater than 0");
+            if (MaxFullImageCacheSize <= 0)
+                throw new InvalidOperationException("MaxFullImageCacheSize must be greater than 0");
             
-            if (PreloadRange < 0)
-                throw new InvalidOperationException("PreloadRange cannot be negative");
+            if (MaxPreviewCacheSize <= 0)
+                throw new InvalidOperationException("MaxPreviewCacheSize must be greater than 0");
+            
+            if (PreviewPreloadRange < 0)
+                throw new InvalidOperationException("PreviewPreloadRange cannot be negative");
             
             if (ExifToolTimeoutMs <= 0)
                 throw new InvalidOperationException("ExifToolTimeoutMs must be greater than 0");
