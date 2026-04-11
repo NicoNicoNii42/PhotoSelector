@@ -46,7 +46,7 @@ namespace PhotoSorterAvalonia
         {
             if (CurrentImage.RenderTransform is not TransformGroup transformGroup) return;
             
-            if (transformGroup.Children[0] is ScaleTransform scaleTransform)
+            if (transformGroup.Children[1] is ScaleTransform scaleTransform)
             {
                 scaleTransform.ScaleX = _currentScale;
                 scaleTransform.ScaleY = _currentScale;
@@ -84,7 +84,7 @@ namespace PhotoSorterAvalonia
         private void ResetTranslation()
         {
             if (CurrentImage.RenderTransform is TransformGroup transformGroup &&
-                transformGroup.Children[1] is TranslateTransform translateTransform)
+                transformGroup.Children[0] is TranslateTransform translateTransform)
             {
                 translateTransform.X = 0;
                 translateTransform.Y = 0;
@@ -97,7 +97,7 @@ namespace PhotoSorterAvalonia
         private void ClampCurrentTranslation()
         {
             if (CurrentImage.RenderTransform is not TransformGroup transformGroup) return;
-            if (transformGroup.Children[1] is not TranslateTransform translateTransform) return;
+            if (transformGroup.Children[0] is not TranslateTransform translateTransform) return;
             
             double x = translateTransform.X;
             double y = translateTransform.Y;
@@ -114,7 +114,7 @@ namespace PhotoSorterAvalonia
         private void ApplyTranslationWithBounds(double deltaX, double deltaY)
         {
             if (CurrentImage.RenderTransform is not TransformGroup transformGroup) return;
-            if (transformGroup.Children[1] is not TranslateTransform translateTransform) return;
+            if (transformGroup.Children[0] is not TranslateTransform translateTransform) return;
             
             double newX = translateTransform.X + deltaX;
             double newY = translateTransform.Y + deltaY;
@@ -126,7 +126,8 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
-        /// Clamps translation values to keep the image within bounds.
+        /// Clamps translation so the transformed image keeps the Viewbox filled (no empty margins when zoomed).
+        /// Uses the real transform chain (origin, Viewbox scale, rotation) instead of span/viewport algebra.
         /// </summary>
         /// <param name="x">The X translation value to clamp.</param>
         /// <param name="y">The Y translation value to clamp.</param>
@@ -134,41 +135,108 @@ namespace PhotoSorterAvalonia
         {
             if (CurrentImage.Source is not Bitmap imageSource)
                 return;
-            
-            if (CurrentImage.Bounds.Width < 1 || CurrentImage.Bounds.Height < 1)
+            if (CurrentImage.RenderTransform is not TransformGroup transformGroup)
+                return;
+            if (transformGroup.Children[0] is not TranslateTransform translateTransform)
                 return;
             
-            // Logical size from pixels + DPI so clamp matches layout (Size alone can disagree with Bounds).
-            Size logical = GetBitmapLogicalSize(imageSource);
-            double bw = logical.Width;
-            double bh = logical.Height;
-            if (bw < 1e-6 || bh < 1e-6)
+            double w = CurrentImage.Bounds.Width;
+            double h = CurrentImage.Bounds.Height;
+            if (w < 1 || h < 1)
+            {
+                Size logical = GetBitmapLogicalSize(imageSource);
+                w = logical.Width;
+                h = logical.Height;
+            }
+            
+            if (w < 1e-6 || h < 1e-6)
                 return;
             
-            double rot = NormalizeAngle360(_currentRotation);
-            bool swapAxes = Math.Abs(rot - 90) < 1.0 || Math.Abs(rot - 270) < 1.0;
+            double vw = _imageContainer.Bounds.Width;
+            double vh = _imageContainer.Bounds.Height;
+            if (vw < 1 || vh < 1)
+                return;
             
-            double spanX = (swapAxes ? bh : bw) * _currentScale;
-            double spanY = (swapAxes ? bw : bh) * _currentScale;
+            Rect local = new Rect(0, 0, w, h);
+            Rect view = new Rect(0, 0, vw, vh);
+            const double eps = 0.5;
             
-            double viewW = Math.Min(bw, CurrentImage.Bounds.Width);
-            double viewH = Math.Min(bh, CurrentImage.Bounds.Height);
+            translateTransform.X = x;
+            translateTransform.Y = y;
             
-            if (spanX <= viewW)
-                x = 0;
-            else
+            for (int iter = 0; iter < 16; iter++)
             {
-                double maxX = (spanX - viewW) / 2;
-                x = Math.Clamp(x, -maxX, maxX);
+                Matrix? toView = CurrentImage.TransformToVisual(_imageContainer);
+                if (!toView.HasValue)
+                    return;
+                
+                GetTransformedImageBoundsInViewBox(toView.Value, local, out double minX, out double maxX, out double minY, out double maxY);
+                
+                double contentW = maxX - minX;
+                double contentH = maxY - minY;
+                bool wide = contentW > view.Width + eps;
+                bool tall = contentH > view.Height + eps;
+                
+                if (!wide && !tall)
+                {
+                    x = 0;
+                    y = 0;
+                    translateTransform.X = 0;
+                    translateTransform.Y = 0;
+                    return;
+                }
+                
+                bool moved = false;
+                if (wide)
+                {
+                    if (minX > view.Left + eps)
+                    {
+                        x += view.Left - minX;
+                        moved = true;
+                    }
+                    else if (maxX < view.Right - eps)
+                    {
+                        x += view.Right - maxX;
+                        moved = true;
+                    }
+                }
+                else
+                    x = 0;
+                
+                if (tall)
+                {
+                    if (minY > view.Top + eps)
+                    {
+                        y += view.Top - minY;
+                        moved = true;
+                    }
+                    else if (maxY < view.Bottom - eps)
+                    {
+                        y += view.Bottom - maxY;
+                        moved = true;
+                    }
+                }
+                else
+                    y = 0;
+                
+                translateTransform.X = x;
+                translateTransform.Y = y;
+                
+                if (!moved)
+                    break;
             }
-            
-            if (spanY <= viewH)
-                y = 0;
-            else
-            {
-                double maxY = (spanY - viewH) / 2;
-                y = Math.Clamp(y, -maxY, maxY);
-            }
+        }
+        
+        private static void GetTransformedImageBoundsInViewBox(Matrix toViewBox, Rect local, out double minX, out double maxX, out double minY, out double maxY)
+        {
+            Point p0 = toViewBox.Transform(local.TopLeft);
+            Point p1 = toViewBox.Transform(local.TopRight);
+            Point p2 = toViewBox.Transform(local.BottomRight);
+            Point p3 = toViewBox.Transform(local.BottomLeft);
+            minX = Math.Min(Math.Min(p0.X, p1.X), Math.Min(p2.X, p3.X));
+            maxX = Math.Max(Math.Max(p0.X, p1.X), Math.Max(p2.X, p3.X));
+            minY = Math.Min(Math.Min(p0.Y, p1.Y), Math.Min(p2.Y, p3.Y));
+            maxY = Math.Max(Math.Max(p0.Y, p1.Y), Math.Max(p2.Y, p3.Y));
         }
         
         /// <summary>

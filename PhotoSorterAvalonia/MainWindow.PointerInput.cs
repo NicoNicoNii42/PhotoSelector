@@ -73,7 +73,7 @@ namespace PhotoSorterAvalonia
             // Keep the point under the cursor stable while zooming (Scale about center, then Translate, then Rotate).
             // Correct delta: T += (p - c) * (s0 - s1). Using (1 - s1/s0) without *s0 is wrong and shifts the image on each wheel step.
             if (CurrentImage.RenderTransform is TransformGroup transformGroup &&
-                transformGroup.Children[1] is TranslateTransform translateTransform &&
+                transformGroup.Children[0] is TranslateTransform translateTransform &&
                 IsRotationUprightForWheelZoom())
             {
                 Size img = GetBitmapLogicalSize((Bitmap)CurrentImage.Source);
