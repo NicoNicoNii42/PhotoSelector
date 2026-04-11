@@ -5,6 +5,9 @@
 
 set -e  # Exit on error
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 echo "📸 Photo Sorter - macOS Application Bundle Creator"
 echo "=================================================="
 
@@ -63,7 +66,7 @@ cat > "$APP_CONTENTS_DIR/Info.plist" << EOF
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>CFBundleExecutable</key>
-    <string>launch.sh</string>
+    <string>PhotoSorterAvalonia</string>
     <key>CFBundleIconFile</key>
     <string>$APP_ICON</string>
     <key>LSMinimumSystemVersion</key>
@@ -118,15 +121,6 @@ if [ ! -f "$APP_RESOURCES_DIR/$APP_ICON" ]; then
     fi
 fi
 
-# Create a simple launcher script
-echo "🚀 Creating launcher script..."
-cat > "$APP_MACOS_DIR/launch.sh" << 'EOF'
-#!/bin/bash
-cd "$(dirname "$0")"
-exec ./PhotoSorterAvalonia
-EOF
-chmod +x "$APP_MACOS_DIR/launch.sh"
-
 # Make the main executable executable
 chmod +x "$APP_MACOS_DIR/PhotoSorterAvalonia"
 
@@ -135,6 +129,19 @@ echo "📄 Creating PkgInfo..."
 echo "APPL????" > "$APP_CONTENTS_DIR/PkgInfo"
 
 echo "✅ Application bundle created: $APP_BUNDLE_DIR"
+
+# Register the bundle with Launch Services and import metadata so Spotlight (⌘Space)
+# can find it by display name without waiting for a full volume reindex.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+APP_ABS="$SCRIPT_DIR/$APP_BUNDLE_DIR"
+if [ -x "$LSREGISTER" ]; then
+    echo "🔎 Registering app with Launch Services (Spotlight / Open With)..."
+    "$LSREGISTER" -f "$APP_ABS" 2>/dev/null || true
+fi
+if command -v mdimport >/dev/null 2>&1; then
+    echo "🔎 Queuing Spotlight metadata import..."
+    mdimport "$APP_ABS" 2>/dev/null || true
+fi
 
 # Optional: Copy to Applications folder
 echo ""
