@@ -8,6 +8,13 @@ set -e  # Exit on error
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+INSTALL_TO_APPLICATIONS=false
+for arg in "$@"; do
+    case "$arg" in
+        --install) INSTALL_TO_APPLICATIONS=true ;;
+    esac
+done
+
 echo "📸 Photo Sorter - macOS Application Bundle Creator"
 echo "=================================================="
 
@@ -15,12 +22,36 @@ echo "=================================================="
 APP_NAME="Photo Sorter"
 APP_IDENTIFIER="com.photoselector.PhotoSorter"
 VERSION="1.0.0"
+# Unique per build so Launch Services / Spotlight treat replaced bundles as new (not stale cache).
+VERSION_BUILD="${VERSION}.$(date +%Y%m%d.%H%M%S)"
 BUILD_DIR="test-build"  # Updated to match the publish output directory
 APP_BUNDLE_DIR="Photo Sorter.app"
 APP_CONTENTS_DIR="$APP_BUNDLE_DIR/Contents"
 APP_MACOS_DIR="$APP_CONTENTS_DIR/MacOS"
 APP_RESOURCES_DIR="$APP_CONTENTS_DIR/Resources"
 APP_ICON="AppIcon.icns"
+
+# Same removals as "Uninstall Photo Sorter.command", run up front so --install always
+# replaces a clean slot (no-op if nothing was installed).
+if [ "$INSTALL_TO_APPLICATIONS" = true ]; then
+    echo "🧹 Preparing for install (remove previous Applications copy and Desktop alias if any)..."
+    rm -rf "$HOME/Desktop/Photo Sorter" 2>/dev/null || true
+
+    APP_SYS="/Applications/Photo Sorter.app"
+    if [ -d "$APP_SYS" ]; then
+        INST_BIN="$APP_SYS/Contents/MacOS/PhotoSorterAvalonia"
+        if [ -f "$INST_BIN" ] && command -v lsof >/dev/null 2>&1 && lsof "$INST_BIN" >/dev/null 2>&1; then
+            echo "❌ Photo Sorter is still running from /Applications. Quit it, then run:"
+            echo "   ./create-mac-app.sh --install"
+            exit 1
+        fi
+        rm -rf "$APP_SYS"
+        echo "   Removed: $APP_SYS"
+    else
+        echo "   (No existing app in /Applications.)"
+    fi
+    echo ""
+fi
 
 echo "🔧 Building the application..."
 
@@ -31,6 +62,9 @@ rm -rf "$BUILD_DIR" "$APP_BUNDLE_DIR" 2>/dev/null || true
 # Build the application for macOS
 echo "🏗️  Building for macOS (Release mode)..."
 cd PhotoSorterAvalonia
+# Force a full rebuild so publish output is never silently reused from disk cache.
+dotnet clean -c Release >/dev/null
+rm -rf bin obj
 dotnet publish -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output ../test-build
 cd ..
 
@@ -58,7 +92,7 @@ cat > "$APP_CONTENTS_DIR/Info.plist" << EOF
     <key>CFBundleIdentifier</key>
     <string>$APP_IDENTIFIER</string>
     <key>CFBundleVersion</key>
-    <string>$VERSION</string>
+    <string>$VERSION_BUILD</string>
     <key>CFBundleShortVersionString</key>
     <string>$VERSION</string>
     <key>CFBundlePackageType</key>
@@ -143,14 +177,28 @@ if command -v mdimport >/dev/null 2>&1; then
     mdimport "$APP_ABS" 2>/dev/null || true
 fi
 
+APP_IN_APPLICATIONS="/Applications/Photo Sorter.app"
+if [ "$INSTALL_TO_APPLICATIONS" = true ]; then
+    echo ""
+    echo "📥 --install: updating copy in /Applications (what Spotlight usually opens)..."
+    bash "$SCRIPT_DIR/install-photo-sorter.sh"
+elif [ -d "$APP_IN_APPLICATIONS" ]; then
+    echo ""
+    echo "⚠️  You still have: $APP_IN_APPLICATIONS"
+    echo "   Spotlight and Open often use that copy, not the bundle in this repo."
+    echo "   Re-run with:  ./create-mac-app.sh --install"
+    echo "   Or install:   ./install-photo-sorter.sh"
+fi
+
 # Optional: Copy to Applications folder
 echo ""
 echo "📂 Installation options:"
 echo "1. Run from current location: open \"$APP_BUNDLE_DIR\""
-echo "2. Copy to Applications folder:"
-echo "   cp -r \"$APP_BUNDLE_DIR\" \"/Applications/\""
+echo "2. Copy to Applications folder (recommended for Spotlight):"
+echo "   ./create-mac-app.sh --install"
+echo "   # or: ./install-photo-sorter.sh"
 echo "3. Create alias on Desktop:"
-echo "   ln -s \"$(pwd)/$APP_BUNDLE_DIR\" \"$HOME/Desktop/Photo Sorter\""
+echo "   ln -s \"$SCRIPT_DIR/$APP_BUNDLE_DIR\" \"$HOME/Desktop/Photo Sorter\""
 echo ""
 echo "🎯 To run the application:"
 echo "   Double-click on \"$APP_BUNDLE_DIR\" in Finder"
