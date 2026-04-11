@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -315,8 +316,7 @@ namespace PhotoSorterAvalonia
                         CurrentImage.Source = cachedBitmap;
                         LogImageDiagnostic($"Cache hit. Path='{imagePath}', ElapsedMs={loadTimer.ElapsedMilliseconds}");
                         
-                        // Apply EXIF auto-rotation
-                        ApplyExifOrientation(imagePath);
+                        ResetRotationForUprightPixels();
                         
                         return;
                     }
@@ -333,54 +333,26 @@ namespace PhotoSorterAvalonia
                     try
                     {
                         var bitmap = LoadBitmapWithFallback(imagePath);
-                        LogImageDiagnostic($"Decode success. Path='{imagePath}', ElapsedMs={decodeTimer.ElapsedMilliseconds}");
+                        int exifOrientation = GetExifOrientation(imagePath);
+                        LogImageDiagnostic($"Decode success. Path='{imagePath}', ExifOrientation={exifOrientation}, ElapsedMs={decodeTimer.ElapsedMilliseconds}");
                         
-                        // Add to cache with LRU management
-                        lock (_imageCache)
-                        {
-                            _imageCache[imagePath] = bitmap;
-                            
-                            // Update LRU
-                            lock (_lruList)
-                            {
-                                _lruList.AddFirst(imagePath);
-                            }
-                            
-                            // Enforce cache size limit
-                            EnforceCacheSizeLimit();
-                        }
-                        
-                        // Update UI on main thread
                         Dispatcher.UIThread.InvokeAsync(() =>
                         {
-                            string? currentExpectedPath = _currentIndex >= 0 && _currentIndex < _photos.Count
-                                ? _photos[_currentIndex]
-                                : null;
-                            if (!string.Equals(currentExpectedPath, imagePath, StringComparison.Ordinal))
+                            try
                             {
-                                LogImageDiagnostic($"Stale UI update candidate. Requested='{imagePath}', CurrentExpected='{currentExpectedPath}'");
-                                return;
+                                FinishImageDecodeOnUiThread(imagePath, bitmap, exifOrientation, loadTimer);
                             }
-
-                            CurrentImage.Source = bitmap;
-                            LogImageDiagnostic($"UI image source set. Path='{imagePath}', TotalElapsedMs={loadTimer.ElapsedMilliseconds}");
-                            
-                            // Apply EXIF auto-rotation for non-cached images
-                            ApplyExifOrientation(imagePath);
+                            catch (Exception ex)
+                            {
+                                LogImageDiagnostic($"UI finalize decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                bitmap.Dispose();
+                            }
                         });
                     }
                     catch (Exception ex)
                     {
                         // If loading fails, keep placeholder
                         LogImageDiagnostic($"Decode failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
-                    }
-                    finally
-                    {
-                        // Remove from loading set
-                        lock (_loadingImages)
-                        {
-                            _loadingImages.Remove(imagePath);
-                        }
                     }
                 });
             }
@@ -447,36 +419,48 @@ namespace PhotoSorterAvalonia
                             _loadingImages.Add(imagePath);
                         }
                         
-                        // Load and cache in background
+                        // Load and cache in background (EXIF bake runs on UI thread; see FinishImageDecodeOnUiThread).
                         Task.Run(() =>
                         {
                             var preloadTimer = Stopwatch.StartNew();
                             try
                             {
                                 var bitmap = LoadBitmapWithFallback(imagePath);
-                                
-                                lock (_imageCache)
+                                int exifOrientation = GetExifOrientation(imagePath);
+
+                                Dispatcher.UIThread.InvokeAsync(() =>
                                 {
-                                    _imageCache[imagePath] = bitmap;
-                                    
-                                    // Update LRU for preloaded images
-                                    lock (_lruList)
+                                    try
                                     {
-                                        _lruList.AddFirst(imagePath);
+                                        lock (_imageCache)
+                                        {
+                                            if (_imageCache.ContainsKey(imagePath))
+                                            {
+                                                bitmap.Dispose();
+                                                return;
+                                            }
+                                        }
+
+                                        FinishImageDecodeOnUiThread(imagePath, bitmap, exifOrientation, null);
+                                        LogImageDiagnostic($"Preload success. Path='{imagePath}', ElapsedMs={preloadTimer.ElapsedMilliseconds}");
                                     }
-                                    
-                                    // Enforce cache size limit
-                                    EnforceCacheSizeLimit();
-                                }
-                                LogImageDiagnostic($"Preload success. Path='{imagePath}', ElapsedMs={preloadTimer.ElapsedMilliseconds}");
+                                    catch (Exception ex)
+                                    {
+                                        LogImageDiagnostic($"Preload UI finalize failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
+                                        bitmap.Dispose();
+                                    }
+                                    finally
+                                    {
+                                        lock (_loadingImages)
+                                        {
+                                            _loadingImages.Remove(imagePath);
+                                        }
+                                    }
+                                });
                             }
                             catch (Exception ex)
                             {
-                                // Ignore loading errors for preloaded images
                                 LogImageDiagnostic($"Preload failed. Path='{imagePath}', Error='{ex.GetType().Name}: {ex.Message}'");
-                            }
-                            finally
-                            {
                                 lock (_loadingImages)
                                 {
                                     _loadingImages.Remove(imagePath);
@@ -854,26 +838,125 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
-        /// Applies automatic rotation based on EXIF orientation metadata using ExifTool.
+        /// EXIF orientation is baked into decoded bitmaps on the UI thread; reset transform rotation for the new image.
         /// </summary>
-        /// <param name="imagePath">The path to the image file.</param>
-        private void ApplyExifOrientation(string imagePath)
+        private void ResetRotationForUprightPixels()
         {
-            int exifOrientation = GetExifOrientation(imagePath);
-            
-            // Map EXIF orientation to rotation degrees
-            double rotationDegrees = exifOrientation switch
+            _currentRotation = AppConfig.DefaultRotation;
+            ApplyRotation();
+        }
+        
+        /// <summary>
+        /// Normalizes EXIF orientations 1/3/6/8 into upright pixel data. Must run on the UI thread (RenderTargetBitmap.Render).
+        /// </summary>
+        private static Bitmap NormalizeBitmapExifOnUiThread(Bitmap decoded, int exifOrientation)
+        {
+            double angle = exifOrientation switch
             {
-                1 => 0,    // Normal
-                3 => 180,  // Rotated 180°
-                6 => 90,   // Rotated 90° clockwise
-                8 => 270,  // Rotated 270° clockwise (90° counter-clockwise)
-                _ => 0     // Default
+                1 => 0,
+                3 => 180,
+                6 => 90,
+                8 => 270,
+                _ => 0
             };
             
-            // Always apply rotation (even if 0°) to reset from previous photo
-            _currentRotation = rotationDegrees;
-            ApplyRotation();
+            if (angle == 0)
+                return decoded;
+            
+            try
+            {
+                var baked = BakeOrientationByRendering(decoded, angle);
+                decoded.Dispose();
+                return baked;
+            }
+            catch (Exception ex)
+            {
+                LogImageDiagnostic($"Bake EXIF orientation failed; showing decoded pixels. Orientation={exifOrientation}, Error='{ex.Message}'");
+                return decoded;
+            }
+        }
+        
+        /// <summary>
+        /// Renders a rotated copy of the bitmap (same angles as the former EXIF RenderTransform mapping).
+        /// </summary>
+        private static Bitmap BakeOrientationByRendering(Bitmap source, double angleDeg)
+        {
+            var ps = source.PixelSize;
+            bool swapDimensions = angleDeg is 90 or 270;
+            int outW = swapDimensions ? ps.Height : ps.Width;
+            int outH = swapDimensions ? ps.Width : ps.Height;
+            
+            var imageControl = new Image
+            {
+                Source = source,
+                Stretch = Stretch.None,
+                Width = ps.Width,
+                Height = ps.Height,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            imageControl.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+            imageControl.RenderTransform = new RotateTransform { Angle = angleDeg };
+            
+            var container = new Grid
+            {
+                Width = outW,
+                Height = outH,
+                Background = Brushes.Transparent,
+            };
+            container.Children.Add(imageControl);
+            
+            var layoutSize = new Size(outW, outH);
+            container.Measure(layoutSize);
+            container.Arrange(new Rect(layoutSize));
+            container.UpdateLayout();
+            
+            var rtb = new RenderTargetBitmap(new PixelSize(outW, outH), source.Dpi);
+            rtb.Render(container);
+            return rtb;
+        }
+        
+        /// <summary>
+        /// Caches the EXIF-normalized bitmap and assigns it to the view when it is still the current file.
+        /// </summary>
+        private void FinishImageDecodeOnUiThread(string imagePath, Bitmap decoded, int exifOrientation, Stopwatch? loadTimer)
+        {
+            Bitmap ready = NormalizeBitmapExifOnUiThread(decoded, exifOrientation);
+            
+            lock (_imageCache)
+            {
+                if (_imageCache.ContainsKey(imagePath))
+                {
+                    ready.Dispose();
+                    return;
+                }
+                
+                _imageCache[imagePath] = ready;
+                lock (_lruList)
+                {
+                    _lruList.Remove(imagePath);
+                    _lruList.AddFirst(imagePath);
+                }
+                
+                EnforceCacheSizeLimit();
+            }
+            
+            string? currentExpectedPath = _currentIndex >= 0 && _currentIndex < _photos.Count
+                ? _photos[_currentIndex]
+                : null;
+            if (!string.Equals(currentExpectedPath, imagePath, StringComparison.Ordinal))
+            {
+                LogImageDiagnostic($"Stale UI update candidate. Requested='{imagePath}', CurrentExpected='{currentExpectedPath}'");
+                return;
+            }
+            
+            CurrentImage.Source = ready;
+            if (loadTimer != null)
+            {
+                LogImageDiagnostic($"UI image source set. Path='{imagePath}', TotalElapsedMs={loadTimer.ElapsedMilliseconds}");
+            }
+            
+            ResetRotationForUprightPixels();
         }
         
         /// <summary>
@@ -1079,8 +1162,6 @@ namespace PhotoSorterAvalonia
             if (transformGroup.Children[2] is not RotateTransform rotateTransform) return;
             
             rotateTransform.Angle = _currentRotation;
-            
-            // Update the Viewbox display after rotation
             UpdateViewboxDisplay();
         }
         

@@ -17,7 +17,8 @@
                     <Image x:Name="CurrentImage" 
                            Stretch="None" 
                            HorizontalAlignment="Center" 
-                           VerticalAlignment="Center">
+                           VerticalAlignment="Center"
+                           RenderTransformOrigin="0.5,0.5">
                         <Image.RenderTransform>
                             <TransformGroup>
                                 <ScaleTransform ScaleX="1" ScaleY="1"/>
