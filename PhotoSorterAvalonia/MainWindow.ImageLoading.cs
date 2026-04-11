@@ -86,6 +86,34 @@ namespace PhotoSorterAvalonia
             return false;
         }
         
+        /// <summary>Clears decoded image caches (e.g. after switching the working folder).</summary>
+        private void ClearAllImageCaches()
+        {
+            ReplaceCurrentImageSource(null);
+            
+            lock (_imageCache)
+            {
+                foreach (var kv in _imageCache)
+                    kv.Value.Dispose();
+                _imageCache.Clear();
+            }
+            lock (_lruList)
+                _lruList.Clear();
+            lock (_loadingImages)
+                _loadingImages.Clear();
+            
+            lock (_previewCache)
+            {
+                foreach (var kv in _previewCache)
+                    kv.Value.Dispose();
+                _previewCache.Clear();
+            }
+            lock (_previewLruList)
+                _previewLruList.Clear();
+            lock (_loadingPreviewPaths)
+                _loadingPreviewPaths.Clear();
+        }
+        
         private bool IsStillCurrentImagePath(string imagePath)
         {
             string? expected = _currentIndex >= 0 && _currentIndex < _photos.Count

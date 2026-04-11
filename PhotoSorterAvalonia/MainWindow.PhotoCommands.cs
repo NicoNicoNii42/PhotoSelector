@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using System;
@@ -274,6 +275,39 @@ namespace PhotoSorterAvalonia
         private void SortOut_Click(object? sender, RoutedEventArgs e) => SortOutCurrent();
         private void Good_Click(object? sender, RoutedEventArgs e) => MoveToGood();
         private void VeryGood_Click(object? sender, RoutedEventArgs e) => MoveToVeryGood();
+        
+        private async void OpenWorkingFolder_Click(object? sender, RoutedEventArgs e)
+        {
+            IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "Choose folder to sort (only files directly in this folder; moves go into subfolders here)",
+                AllowMultiple = false,
+            });
+            if (folders.Count == 0)
+                return;
+            
+            string? picked = folders[0].TryGetLocalPath();
+            if (string.IsNullOrEmpty(picked) || !Directory.Exists(picked))
+            {
+                ShowError("Could not use the selected folder (local path unavailable).");
+                return;
+            }
+            
+            _workingFolder = Path.GetFullPath(picked);
+            SessionSettings.Save(new SessionSettings.Data { WorkingFolder = _workingFolder });
+            InitializeFolderPaths();
+            CreateDestinationFolders();
+            ClearAllImageCaches();
+            _currentIndex = 0;
+            LoadPhotos();
+            
+            var folderStats = StatisticsManager.ScanFolderStatistics(_goodFolder, _veryGoodFolder, _sortedOutFolder);
+            _goodCount = folderStats.GoodCount;
+            _veryGoodCount = folderStats.VeryGoodCount;
+            _sortedOutCount = folderStats.SortedOutCount;
+            UpdateDisplay();
+        }
+        
         private void Quit_Click(object? sender, RoutedEventArgs e)
         {
             ShowFinalStatistics();
@@ -286,7 +320,7 @@ namespace PhotoSorterAvalonia
             
             if (_photos.Count == 0)
             {
-                ShowError("No .DNG files found in the source folder.");
+                ShowError($"No files matching '{AppConfig.FileExtension}' were found in the working folder.");
             }
         }
         
@@ -342,6 +376,9 @@ namespace PhotoSorterAvalonia
             
             string stats = $"📊 FINAL STATISTICS\n" +
                           $"==================\n\n" +
+                          
+                          $"📂 Working folder:\n" +
+                          $"   {_workingFolder}\n\n" +
                           
                           $"📈 Current Session:\n" +
                           $"   • Total photos: {_totalPhotos}\n" +

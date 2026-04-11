@@ -86,16 +86,22 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
-        /// Scans the destination folders to count existing files.
+        /// Scans the destination folders to count existing files (non-recursive, same extension as sorting).
         /// </summary>
+        /// <param name="goodFolder">Full path to good destination.</param>
+        /// <param name="veryGoodFolder">Full path to very good destination.</param>
+        /// <param name="sortedOutFolder">Full path to sorted-out destination.</param>
         /// <returns>Statistics data based on current folder contents.</returns>
-        public static StatisticsData ScanFolderStatistics()
+        public static StatisticsData ScanFolderStatistics(
+            string? goodFolder = null,
+            string? veryGoodFolder = null,
+            string? sortedOutFolder = null)
         {
             try
             {
-                string goodFolder = AppConfig.GetGoodFolderPath();
-                string veryGoodFolder = AppConfig.GetVeryGoodFolderPath();
-                string sortedOutFolder = AppConfig.GetSortedOutFolderPath();
+                goodFolder ??= AppConfig.GetGoodFolderPath();
+                veryGoodFolder ??= AppConfig.GetVeryGoodFolderPath();
+                sortedOutFolder ??= AppConfig.GetSortedOutFolderPath();
                 
                 int goodCount = Directory.Exists(goodFolder) ? 
                     Directory.GetFiles(goodFolder, AppConfig.FileExtension).Length : 0;
@@ -137,10 +143,17 @@ namespace PhotoSorterAvalonia
         /// Merges scanned folder statistics with persistent statistics.
         /// </summary>
         /// <param name="persistentData">The persistent statistics data.</param>
+        /// <param name="goodFolder">Good destination path for this session.</param>
+        /// <param name="veryGoodFolder">Very good destination path for this session.</param>
+        /// <param name="sortedOutFolder">Sorted-out destination path for this session.</param>
         /// <returns>Updated statistics data with folder scanning results.</returns>
-        public static StatisticsData MergeWithFolderScan(StatisticsData persistentData)
+        public static StatisticsData MergeWithFolderScan(
+            StatisticsData persistentData,
+            string goodFolder,
+            string veryGoodFolder,
+            string sortedOutFolder)
         {
-            var folderStats = ScanFolderStatistics();
+            var folderStats = ScanFolderStatistics(goodFolder, veryGoodFolder, sortedOutFolder);
             
             // Use the maximum values between persistent data and folder scan
             // This ensures we don't lose data if files were moved manually

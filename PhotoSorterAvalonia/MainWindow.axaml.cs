@@ -24,6 +24,7 @@ namespace PhotoSorterAvalonia
     {
         #region Private Fields
         
+        private string _workingFolder = null!;
         private string _goodFolder = null!;
         private string _veryGoodFolder = null!;
         private string _sortedOutFolder = null!;
@@ -74,12 +75,19 @@ namespace PhotoSorterAvalonia
             _imageContainer = this.FindControl<Viewbox>("ImageContainer")!;
             _photoStageBorder = this.FindControl<Border>("PhotoStageBorder")!;
             
-            // Initialize folder paths first
+            var session = SessionSettings.Load();
+            _workingFolder = ResolveInitialWorkingFolder(session);
+            
+            // Initialize folder paths first (destinations are under the working folder)
             InitializeFolderPaths();
             
             // Load persistent statistics and merge with folder scan
             _persistentStats = StatisticsManager.LoadStatistics();
-            _persistentStats = StatisticsManager.MergeWithFolderScan(_persistentStats);
+            _persistentStats = StatisticsManager.MergeWithFolderScan(
+                _persistentStats,
+                _goodFolder,
+                _veryGoodFolder,
+                _sortedOutFolder);
             
             // Initialize current session counts from folder scan
             InitializeCurrentCountsFromFolders();
@@ -102,9 +110,35 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void InitializeFolderPaths()
         {
-            _goodFolder = AppConfig.GetGoodFolderPath();
-            _veryGoodFolder = AppConfig.GetVeryGoodFolderPath();
-            _sortedOutFolder = AppConfig.GetSortedOutFolderPath();
+            _goodFolder = AppConfig.GetGoodFolderPath(_workingFolder);
+            _veryGoodFolder = AppConfig.GetVeryGoodFolderPath(_workingFolder);
+            _sortedOutFolder = AppConfig.GetSortedOutFolderPath(_workingFolder);
+        }
+        
+        private static string ResolveInitialWorkingFolder(SessionSettings.Data session)
+        {
+            if (!string.IsNullOrWhiteSpace(session.WorkingFolder))
+            {
+                try
+                {
+                    string full = Path.GetFullPath(session.WorkingFolder);
+                    if (Directory.Exists(full))
+                        return full;
+                }
+                catch
+                {
+                    // Fall back to configured source folder
+                }
+            }
+            
+            try
+            {
+                return Path.GetFullPath(AppConfig.SourceFolder);
+            }
+            catch
+            {
+                return AppConfig.SourceFolder;
+            }
         }
         
         /// <summary>
@@ -163,7 +197,7 @@ namespace PhotoSorterAvalonia
         {
             try
             {
-                var folderStats = StatisticsManager.ScanFolderStatistics();
+                var folderStats = StatisticsManager.ScanFolderStatistics(_goodFolder, _veryGoodFolder, _sortedOutFolder);
                 _goodCount = folderStats.GoodCount;
                 _veryGoodCount = folderStats.VeryGoodCount;
                 _sortedOutCount = folderStats.SortedOutCount;
@@ -183,11 +217,11 @@ namespace PhotoSorterAvalonia
             try
             {
                 _photos.Clear();
-                _photos.AddRange(Directory.GetFiles(AppConfig.SourceFolder, AppConfig.FileExtension)
+                _photos.AddRange(Directory.GetFiles(_workingFolder, AppConfig.FileExtension)
                     .OrderBy(f => f));
                 
                 _totalPhotos = _photos.Count;
-                ImageDecoder.LogDiagnostic($"LoadPhotos complete. SourceFolder='{AppConfig.SourceFolder}', Filter='{AppConfig.FileExtension}', Total={_totalPhotos}");
+                ImageDecoder.LogDiagnostic($"LoadPhotos complete. WorkingFolder='{_workingFolder}', Filter='{AppConfig.FileExtension}', Total={_totalPhotos}");
                 UpdateStatistics();
             }
             catch (Exception ex)
@@ -205,6 +239,7 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void UpdateStatistics()
         {
+            WorkingFolderText.Text = _workingFolder;
             StatsText.Text = $"Total: {_totalPhotos}\n" +
                             $"Good: {_goodCount}\n" +
                             $"Very Good: {_veryGoodCount}\n" +

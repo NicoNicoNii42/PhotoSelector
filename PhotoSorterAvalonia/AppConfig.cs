@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Linq;
 
 namespace PhotoSorterAvalonia
 {
@@ -25,20 +27,17 @@ namespace PhotoSorterAvalonia
         public const string FileExtension = "*.DNG";
         
         /// <summary>
-        /// Name of the "good" photos subfolder.
-        /// Default: "good"
+        /// Relative path (from the working folder) for "good" moves. May include subfolders, e.g. "good".
         /// </summary>
         public const string GoodFolderName = "good";
         
         /// <summary>
-        /// Name of the "very good" photos subfolder.
-        /// Default: "verygood"
+        /// Relative path (from the working folder) for "very good" moves, e.g. "verygood" or "round2/verygood".
         /// </summary>
         public const string VeryGoodFolderName = "verygood";
         
         /// <summary>
-        /// Name of the "sorted out" photos subfolder.
-        /// Default: "sortedout"
+        /// Relative path (from the working folder) for "sorted out" moves, e.g. "sortedout" or "verygood/sortedout".
         /// </summary>
         public const string SortedOutFolderName = "sortedout";
         
@@ -134,28 +133,34 @@ namespace PhotoSorterAvalonia
         // ============================================
         
         /// <summary>
-        /// Gets the full path to the "good" folder.
+        /// Combines a base directory with a relative path that may contain '/' or '\' segments.
         /// </summary>
-        public static string GetGoodFolderPath()
+        public static string CombineUnderWorkingFolder(string workingFolder, string relativePath)
         {
-            return System.IO.Path.Combine(SourceFolder, GoodFolderName);
+            if (string.IsNullOrWhiteSpace(relativePath))
+                return workingFolder;
+            var segments = relativePath.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+            return segments.Aggregate(workingFolder, Path.Combine);
         }
         
-        /// <summary>
-        /// Gets the full path to the "very good" folder.
-        /// </summary>
-        public static string GetVeryGoodFolderPath()
-        {
-            return System.IO.Path.Combine(SourceFolder, VeryGoodFolderName);
-        }
+        /// <summary>Destination folder for "good" under <paramref name="workingFolder"/>.</summary>
+        public static string GetGoodFolderPath(string workingFolder) =>
+            CombineUnderWorkingFolder(workingFolder, GoodFolderName);
         
-        /// <summary>
-        /// Gets the full path to the "sorted out" folder.
-        /// </summary>
-        public static string GetSortedOutFolderPath()
-        {
-            return System.IO.Path.Combine(SourceFolder, SortedOutFolderName);
-        }
+        /// <summary>Destination folder for "very good" under <paramref name="workingFolder"/>.</summary>
+        public static string GetVeryGoodFolderPath(string workingFolder) =>
+            CombineUnderWorkingFolder(workingFolder, VeryGoodFolderName);
+        
+        /// <summary>Destination folder for "sorted out" under <paramref name="workingFolder"/>.</summary>
+        public static string GetSortedOutFolderPath(string workingFolder) =>
+            CombineUnderWorkingFolder(workingFolder, SortedOutFolderName);
+        
+        /// <summary>Default destinations when no working folder override exists (uses <see cref="SourceFolder"/>).</summary>
+        public static string GetGoodFolderPath() => GetGoodFolderPath(SourceFolder);
+        
+        public static string GetVeryGoodFolderPath() => GetVeryGoodFolderPath(SourceFolder);
+        
+        public static string GetSortedOutFolderPath() => GetSortedOutFolderPath(SourceFolder);
         
         /// <summary>
         /// Validates that all configuration values are valid.

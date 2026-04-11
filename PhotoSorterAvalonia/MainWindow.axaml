@@ -91,6 +91,8 @@
                                     <TextBlock Text="• Trackpad scroll on preview: Zoom" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• H: Show/hide instructions" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Escape: Quit with statistics" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• OPEN FOLDER…: Sort files in a subfolder; Good/Very good/Sorted out go under that folder (see AppConfig for nested paths)" 
+                                               FontSize="14" Foreground="White" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -107,69 +109,91 @@
             </Viewbox>
         </Border>
         
-        <!-- Bottom Panel with Statistics, Progress, and Action Buttons -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
-            <!-- Statistics -->
-            <Border Grid.Column="0" Background="#3C3C3C" CornerRadius="10" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="STATISTICS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
-                    <TextBlock x:Name="StatsText" Text="Loading..." FontSize="14" Foreground="White" Margin="0,5,0,0"/>
-                </StackPanel>
-            </Border>
-            
-            <!-- Current File -->
-            <Border Grid.Column="1" Background="#3C3C3C" CornerRadius="10" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="CURRENT FILE" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
-                    <TextBlock x:Name="FileText" Text="No file loaded" FontSize="14" Foreground="White" 
-                               Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
-            </Border>
-            
-            <!-- Progress -->
-            <Border Grid.Column="2" Background="#3C3C3C" CornerRadius="10" Padding="15">
-                <StackPanel>
-                    <TextBlock Text="PROGRESS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
-                    <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="100" Value="0" 
-                                 Margin="0,5,0,0" Height="10"/>
-                    <TextBlock x:Name="ProgressText" Text="0/0" FontSize="14" Foreground="White" 
-                               HorizontalAlignment="Center" Margin="0,5,0,0"/>
-                </StackPanel>
-            </Border>
-            
-            <!-- Action Buttons (Focus visuals disabled) -->
-            <Button Grid.Column="4" 
-                    Content="← SORT OUT" 
-                    Background="#666666" Foreground="White"
-                    FontSize="16" FontWeight="Bold"
-                    Height="60" CornerRadius="10"
-                    Click="SortOut_Click"
-                    Focusable="False"/>
-            
-            <Button Grid.Column="5" 
-                    Content="GOOD →" 
-                    Background="#2E7D32" Foreground="White"
-                    FontSize="16" FontWeight="Bold"
-                    Height="60" CornerRadius="10"
-                    Click="Good_Click"
-                    Focusable="False"/>
-            
-            <Button Grid.Column="6" 
-                    Content="↑ VERY GOOD" 
-                    Background="#1565C0" Foreground="White"
-                    FontSize="16" FontWeight="Bold"
-                    Height="60" CornerRadius="10"
-                    Click="VeryGood_Click"
-                    Focusable="False"/>
-            
-            <Button Grid.Column="7" 
-                    Content="QUIT" 
-                    Background="#C62828" Foreground="White"
-                    FontSize="16" FontWeight="Bold"
-                    Height="60" CornerRadius="10"
-                    Click="Quit_Click"
-                    Focusable="False"/>
-        </Grid>
+        <!-- Bottom: one connected bar (no flex gap — was an empty * column before the toolbar) -->
+        <Border Grid.Row="1"
+                Background="#383838"
+                CornerRadius="10"
+                BorderBrush="#555555"
+                BorderThickness="1"
+                ClipToBounds="True"
+                Padding="0">
+            <Grid ColumnDefinitions="*,*,*,*,Auto" ColumnSpacing="0">
+                <!-- Current (working) folder -->
+                <Border Grid.Column="0" Padding="14" BorderBrush="#4A4A4A" BorderThickness="0,0,1,0">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="CURRENT FOLDER" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
+                        <TextBlock x:Name="WorkingFolderText" Text="—" FontSize="14" Foreground="White" Margin="0,5,0,0"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Statistics -->
+                <Border Grid.Column="1" Padding="14" BorderBrush="#4A4A4A" BorderThickness="0,0,1,0">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="STATISTICS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
+                        <TextBlock x:Name="StatsText" Text="Loading..." FontSize="14" Foreground="White" Margin="0,5,0,0"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Current File -->
+                <Border Grid.Column="2" Padding="14" BorderBrush="#4A4A4A" BorderThickness="0,0,1,0">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="CURRENT FILE" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
+                        <TextBlock x:Name="FileText" Text="No file loaded" FontSize="14" Foreground="White" 
+                                   Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Progress (clip: Fluent progress track can paint wider than the cell) -->
+                <Border Grid.Column="3" Padding="14" BorderBrush="#4A4A4A" BorderThickness="0,0,1,0" ClipToBounds="True">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="PROGRESS" FontSize="12" FontWeight="Bold" Foreground="#AAAAAA"/>
+                        <ProgressBar x:Name="ProgressBar" Minimum="0" Maximum="100" Value="0" 
+                                     Margin="0,5,0,0" Height="10" HorizontalAlignment="Stretch" MinWidth="0"/>
+                        <TextBlock x:Name="ProgressText" Text="0/0" FontSize="14" Foreground="White" 
+                                   HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Actions: slightly darker band, flush with progress -->
+                <Border Grid.Column="4" Background="#2F2F2F" Padding="12,10">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="10">
+                        <Button Content="← SORT OUT" 
+                                Background="#666666" Foreground="White"
+                                FontSize="15" FontWeight="Bold"
+                                Height="52" MinWidth="108" CornerRadius="8"
+                                Click="SortOut_Click"
+                                Focusable="False"/>
+                        <Button Content="GOOD →" 
+                                Background="#2E7D32" Foreground="White"
+                                FontSize="15" FontWeight="Bold"
+                                Height="52" MinWidth="96" CornerRadius="8"
+                                Click="Good_Click"
+                                Focusable="False"/>
+                        <Button Content="↑ VERY GOOD" 
+                                Background="#1565C0" Foreground="White"
+                                FontSize="15" FontWeight="Bold"
+                                Height="52" MinWidth="118" CornerRadius="8"
+                                Click="VeryGood_Click"
+                                Focusable="False"/>
+                        <Border Width="1" Height="34" Background="#606060" Margin="2,0"/>
+                        <Button Content="OPEN FOLDER…" 
+                                Background="#37474F" Foreground="White"
+                                FontSize="13" FontWeight="Bold"
+                                Height="52" MinWidth="118" CornerRadius="8"
+                                Click="OpenWorkingFolder_Click"
+                                Focusable="False"/>
+                        <Button Content="QUIT" 
+                                Background="#C62828" Foreground="White"
+                                FontSize="15" FontWeight="Bold"
+                                Height="52" MinWidth="72" CornerRadius="8"
+                                Click="Quit_Click"
+                                Focusable="False"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
     </Grid>
     
 </Window>
