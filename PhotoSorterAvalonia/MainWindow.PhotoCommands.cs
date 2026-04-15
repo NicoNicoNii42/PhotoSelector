@@ -26,6 +26,9 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void MoveToNext()
         {
+            if (_photos.Count == 0)
+                return;
+            
             if (_currentIndex < _photos.Count - 1)
             {
                 _currentIndex++;
@@ -34,7 +37,9 @@ namespace PhotoSorterAvalonia
             }
             else if (_currentIndex == _photos.Count - 1)
             {
-                FileText.Text = "Last photo";
+                _currentIndex = 0;
+                UpdateDisplay();
+                FileText.Text = "↻ Wrapped to first photo";
             }
         }
         
@@ -43,6 +48,9 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void MoveToPrevious()
         {
+            if (_photos.Count == 0)
+                return;
+            
             if (_currentIndex > 0)
             {
                 _currentIndex--;
@@ -51,7 +59,9 @@ namespace PhotoSorterAvalonia
             }
             else if (_currentIndex == 0)
             {
-                FileText.Text = "First photo";
+                _currentIndex = _photos.Count - 1;
+                UpdateDisplay();
+                FileText.Text = "↺ Wrapped to last photo";
             }
         }
         
