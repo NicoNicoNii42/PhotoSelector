@@ -108,6 +108,15 @@ namespace PhotoSorterAvalonia
             
             try
             {
+                string currentFull = Path.GetFullPath(currentPhoto);
+                string destinationFull = Path.GetFullPath(destination);
+                if (string.Equals(currentFull, destinationFull, StringComparison.OrdinalIgnoreCase))
+                {
+                    MoveToNext();
+                    FileText.Text = $"{fileName} already in {actionName}";
+                    return;
+                }
+
                 File.Move(currentPhoto, destination);
                 
                 if (string.Equals(destinationFolder, _goodFolder, StringComparison.OrdinalIgnoreCase))
@@ -188,13 +197,13 @@ namespace PhotoSorterAvalonia
         ///   Q           - Rotate left (counter-clockwise)
         ///   E           - Rotate right (clockwise)
         ///   + / -       - Zoom in/out
-        ///   Space           - Reset zoom
+        ///   Space / 0   - Reset zoom
         ///   
         /// Application:
         ///   H           - Toggle help overlay
         ///   Escape      - Quit with statistics
         /// </summary>
-        private void OnKeyDown(object? sender, KeyEventArgs e)
+        private async void OnKeyDown(object? sender, KeyEventArgs e)
         {
             bool shiftPressed = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
             
@@ -272,13 +281,14 @@ namespace PhotoSorterAvalonia
                     break;
                     
                 case Key.Space:
+                case Key.D0:
+                case Key.NumPad0:
                     ResetZoom();
                     e.Handled = true;
                     break;
                     
                 case Key.Escape:
-                    ShowFinalStatistics();
-                    Close();
+                    await QuitWithFinalStatsAsync();
                     e.Handled = true;
                     break;
             }
@@ -302,10 +312,9 @@ namespace PhotoSorterAvalonia
             Dispatcher.UIThread.Post(() => SetWorkingFolder(path), DispatcherPriority.Background);
         }
         
-        private void Quit_Click(object? sender, RoutedEventArgs e)
+        private async void Quit_Click(object? sender, RoutedEventArgs e)
         {
-            ShowFinalStatistics();
-            Close();
+            await QuitWithFinalStatsAsync();
         }
         
         private void StartSorting_Click(object? sender, RoutedEventArgs e)
@@ -322,7 +331,7 @@ namespace PhotoSorterAvalonia
         
         #region Utility Methods
         
-        private void ShowTextDialog(string title, string text, double width, double height, bool scroll)
+        private async Task ShowTextDialogAsync(string title, string text, double width, double height, bool scroll)
         {
             var textBlock = new TextBlock
             {
@@ -349,21 +358,26 @@ namespace PhotoSorterAvalonia
                 Height = height,
                 Content = content,
             };
-            dialog.ShowDialog(this);
+            await dialog.ShowDialog(this);
         }
+
+        private void ShowTextDialog(string title, string text, double width, double height, bool scroll) =>
+            _ = ShowTextDialogAsync(title, text, width, height, scroll);
         
         /// <summary>
         /// Shows final statistics in a dialog window, including persistent statistics.
         /// </summary>
-        private void ShowFinalStatistics()
+        private async Task ShowFinalStatisticsAsync()
         {
+            int sessionTotalProcessed = _sessionMovesToGood + _sessionMovesToVeryGood + _sessionMovesToSortedOut;
+
             // Merge current session statistics with persistent statistics
             var mergedStats = StatisticsManager.MergeStatistics(
                 _persistentStats,
                 _sessionMovesToGood,
                 _sessionMovesToVeryGood,
                 _sessionMovesToSortedOut,
-                _totalPhotos);
+                sessionTotalProcessed);
             
             // Save the merged statistics
             StatisticsManager.SaveStatistics(mergedStats);
@@ -375,7 +389,7 @@ namespace PhotoSorterAvalonia
                           $"   {_workingFolder}\n\n" +
                           
                           $"📈 Current Session:\n" +
-                          $"   • Total photos: {_totalPhotos}\n" +
+                          $"   • Photos processed: {sessionTotalProcessed}\n" +
                           $"   • Sorted out: {_sessionMovesToSortedOut}\n" +
                           $"   • Good: {_sessionMovesToGood}\n" +
                           $"   • Very Good: {_sessionMovesToVeryGood}\n\n" +
@@ -396,7 +410,13 @@ namespace PhotoSorterAvalonia
                           $"💾 Statistics saved to:\n" +
                           $"   {StatisticsManager.GetStatisticsFilePath()}";
             
-            ShowTextDialog("Photo Sorter - Complete", stats, 600, 450, scroll: true);
+            await ShowTextDialogAsync("Photo Sorter - Complete", stats, 600, 450, scroll: true);
+        }
+
+        private async Task QuitWithFinalStatsAsync()
+        {
+            await ShowFinalStatisticsAsync();
+            Close();
         }
         
         /// <summary>
@@ -409,4 +429,3 @@ namespace PhotoSorterAvalonia
         #endregion
     }
 }
-

@@ -117,7 +117,7 @@ namespace PhotoSorterAvalonia
                     VeryGoodCount = veryGoodCount,
                     SortedOutCount = sortedOutCount,
                     LastSessionDate = DateTime.Now,
-                    SessionCount = 1
+                    SessionCount = 0
                 };
             }
             catch (Exception ex)
@@ -130,7 +130,7 @@ namespace PhotoSorterAvalonia
                     VeryGoodCount = 0,
                     SortedOutCount = 0,
                     LastSessionDate = DateTime.Now,
-                    SessionCount = 1
+                    SessionCount = 0
                 };
             }
         }

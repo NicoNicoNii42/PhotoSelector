@@ -150,8 +150,8 @@ if [ ! -f "$APP_RESOURCES_DIR/$APP_ICON" ]; then
     # If icon creation failed, remove the icon reference from Info.plist
     if [ ! -f "$APP_RESOURCES_DIR/$APP_ICON" ]; then
         echo "⚠️  Could not create app icon, using default macOS icon"
-        # Remove CFBundleIconFile from Info.plist
-        sed -i '' '/CFBundleIconFile/d' "$APP_CONTENTS_DIR/Info.plist"
+        # Remove both CFBundleIconFile key and its value line from Info.plist
+        sed -i '' '/CFBundleIconFile/{N;d;}' "$APP_CONTENTS_DIR/Info.plist"
     fi
 fi
 

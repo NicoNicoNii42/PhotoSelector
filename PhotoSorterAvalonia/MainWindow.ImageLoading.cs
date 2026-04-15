@@ -520,8 +520,10 @@ namespace PhotoSorterAvalonia
         /// </summary>
         private void PreloadAdjacentImages()
         {
-            if (_photos.Count <= 1)
+            string[] photosSnapshot = _photos.ToArray();
+            if (photosSnapshot.Length <= 1)
                 return;
+            int currentIndexSnapshot = Math.Clamp(_currentIndex, 0, photosSnapshot.Length - 1);
             
             int session = Volatile.Read(ref _folderSession);
             Task.Run(() =>
@@ -535,11 +537,11 @@ namespace PhotoSorterAvalonia
                     if (offset == 0)
                         continue;
                     
-                    int targetIndex = ((_currentIndex + offset) % _photos.Count + _photos.Count) % _photos.Count;
+                    int targetIndex = ((currentIndexSnapshot + offset) % photosSnapshot.Length + photosSnapshot.Length) % photosSnapshot.Length;
                     if (!scheduledIndices.Add(targetIndex))
                         continue;
                     
-                    string imagePath = _photos[targetIndex];
+                    string imagePath = photosSnapshot[targetIndex];
                     
                     lock (_imageCache)
                     {

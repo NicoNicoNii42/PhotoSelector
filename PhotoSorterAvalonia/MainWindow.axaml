@@ -51,7 +51,7 @@
                                         <Border Background="#333" CornerRadius="5" Padding="10">
                                             <TextBlock Text="←" FontSize="20" FontWeight="Bold" Foreground="White"/>
                                         </Border>
-                                        <TextBlock Text="Left click or swipe: Sort out (skip)" 
+                                        <TextBlock Text="Shift + Left (or SORT OUT button): Sort out" 
                                                    FontSize="14" Foreground="White" VerticalAlignment="Center"/>
                                     </StackPanel>
                                     
@@ -59,7 +59,7 @@
                                         <Border Background="#333" CornerRadius="5" Padding="10">
                                             <TextBlock Text="→" FontSize="20" FontWeight="Bold" Foreground="White"/>
                                         </Border>
-                                        <TextBlock Text="Right click or swipe: Move to 'good' folder" 
+                                        <TextBlock Text="Shift + Right (or GOOD button): Move to 'good' folder" 
                                                    FontSize="14" Foreground="White" VerticalAlignment="Center"/>
                                     </StackPanel>
                                     
@@ -67,7 +67,7 @@
                                         <Border Background="#333" CornerRadius="5" Padding="10">
                                             <TextBlock Text="↑" FontSize="20" FontWeight="Bold" Foreground="White"/>
                                         </Border>
-                                        <TextBlock Text="Up click or swipe: Move to 'very good' folder" 
+                                        <TextBlock Text="Shift + Up (or VERY GOOD button): Move to 'very good' folder" 
                                                    FontSize="14" Foreground="White" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </StackPanel>
@@ -88,7 +88,7 @@
                                     <TextBlock Text="• W: Zoom in" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• S: Zoom out" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• 0: Reset zoom" FontSize="14" Foreground="White"/>
-                                    <TextBlock Text="• Drag on preview: Pan (when zoomed)" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Drag on preview: Pan (does not sort)" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Trackpad scroll on preview: Zoom" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• H: Show/hide instructions" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Escape: Quit with statistics" FontSize="14" Foreground="White"/>

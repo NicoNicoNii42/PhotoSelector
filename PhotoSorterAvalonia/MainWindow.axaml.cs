@@ -93,7 +93,7 @@ namespace PhotoSorterAvalonia
             var session = SessionSettings.Load();
             _workingFolder = ResolveInitialWorkingFolder(session);
             
-            // Initialize folder paths first (destinations are under the working folder)
+            // Initialize folder paths first (destinations are anchored under the configured root)
             InitializeFolderPaths();
             
             // Load persistent statistics and merge with folder scan (buckets under source root, not nested under working folder)
@@ -182,7 +182,7 @@ namespace PhotoSorterAvalonia
             }
         }
         
-        /// <summary>Switches the working folder (photos loaded from here; destinations are under the same folder).</summary>
+        /// <summary>Switches the working folder (photos loaded from here; destinations stay anchored at root).</summary>
         private void SetWorkingFolder(string picked)
         {
             if (string.IsNullOrWhiteSpace(picked))
@@ -247,13 +247,14 @@ namespace PhotoSorterAvalonia
         }
         
         /// <summary>
-        /// Initializes the folder paths for sorting categories.
+        /// Initializes destination folder paths for sorting categories.
         /// </summary>
         private void InitializeFolderPaths()
         {
-            _goodFolder = AppConfig.GetGoodFolderPath(_workingFolder);
-            _veryGoodFolder = AppConfig.GetVeryGoodFolderPath(_workingFolder);
-            _sortedOutFolder = AppConfig.GetSortedOutFolderPath(_workingFolder);
+            string anchor = GetStatisticsAnchorFolder();
+            _goodFolder = AppConfig.GetGoodFolderPath(anchor);
+            _veryGoodFolder = AppConfig.GetVeryGoodFolderPath(anchor);
+            _sortedOutFolder = AppConfig.GetSortedOutFolderPath(anchor);
         }
         
         /// <summary>Library root used for Good / Very good / Sorted out counts in the stats panel (preset buckets under <see cref="AppConfig.SourceFolder"/>).</summary>
@@ -420,7 +421,8 @@ namespace PhotoSorterAvalonia
                             $"Very Good: {_veryGoodCount}\n" +
                             $"Sorted Out: {_sortedOutCount}";
             
-            ProgressText.Text = $"{_currentIndex + 1}/{_totalPhotos}";
+            int displayIndex = _totalPhotos > 0 ? _currentIndex + 1 : 0;
+            ProgressText.Text = $"{displayIndex}/{_totalPhotos}";
             ProgressBar.Value = CalculateProgressPercentage();
         }
         
