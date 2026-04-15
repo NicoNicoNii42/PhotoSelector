@@ -70,31 +70,24 @@ namespace PhotoSorterAvalonia
             if (Math.Abs(newScale - oldScale) < 1e-9)
                 return;
             
-            // Keep the point under the cursor stable while zooming (Scale about center, then Translate, then Rotate).
-            // Correct delta: T += (p - c) * (s0 - s1). Using (1 - s1/s0) without *s0 is wrong and shifts the image on each wheel step.
-            if (CurrentImage.RenderTransform is TransformGroup transformGroup &&
-                transformGroup.Children[0] is TranslateTransform translateTransform &&
-                IsRotationUprightForWheelZoom())
-            {
-                Size img = GetBitmapLogicalSize((Bitmap)CurrentImage.Source);
-                double w = img.Width > 1e-6 ? img.Width : CurrentImage.Bounds.Width;
-                double h = img.Height > 1e-6 ? img.Height : CurrentImage.Bounds.Height;
-                if (w > 0 && h > 0)
-                {
-                    Point pos = e.GetPosition(CurrentImage);
-                    double cx = w * 0.5;
-                    double cy = h * 0.5;
-                    bool inside = pos.X >= 0 && pos.X <= w && pos.Y >= 0 && pos.Y <= h;
-                    double px = inside ? pos.X : cx;
-                    double py = inside ? pos.Y : cy;
-                    double dScale = oldScale - newScale;
-                    translateTransform.X += (px - cx) * dScale;
-                    translateTransform.Y += (py - cy) * dScale;
-                }
-            }
+            Point pointerInView = e.GetPosition(_imageContainer);
+            Matrix? toViewBefore = CurrentImage.TransformToVisual(_imageContainer);
+            Point? anchorLocal = null;
+            if (toViewBefore.HasValue && toViewBefore.Value.TryInvert(out Matrix inverse))
+                anchorLocal = inverse.Transform(pointerInView);
             
             _currentScale = newScale;
             ApplyZoom();
+
+            if (anchorLocal.HasValue &&
+                CurrentImage.RenderTransform is TransformGroup transformGroup &&
+                transformGroup.Children[0] is TranslateTransform translateTransform)
+            {
+                KeepLocalPointUnderPointer(anchorLocal.Value, pointerInView, translateTransform);
+                ClampCurrentTranslation();
+                UpdateViewboxDisplay();
+            }
+
             e.Handled = true;
         }
         
@@ -118,6 +111,52 @@ namespace PhotoSorterAvalonia
             double dx = dpi.X >= 1 ? dpi.X : 96.0;
             double dy = dpi.Y >= 1 ? dpi.Y : 96.0;
             return bmp.PixelSize.ToSizeWithDpi(new Vector(dx, dy));
+        }
+
+        private void KeepLocalPointUnderPointer(Point localAnchor, Point targetInView, TranslateTransform translateTransform)
+        {
+            const double epsilon = 0.25;
+            const int maxIterations = 4;
+
+            for (int i = 0; i < maxIterations; i++)
+            {
+                Matrix? toViewNow = CurrentImage.TransformToVisual(_imageContainer);
+                if (!toViewNow.HasValue)
+                    return;
+
+                Point mapped = toViewNow.Value.Transform(localAnchor);
+                Vector error = targetInView - mapped;
+                if (Math.Abs(error.X) < epsilon && Math.Abs(error.Y) < epsilon)
+                    return;
+
+                const double probe = 1.0;
+                Vector basisX = SampleMappedWithTranslationDelta(localAnchor, translateTransform, probe, 0) - mapped;
+                Vector basisY = SampleMappedWithTranslationDelta(localAnchor, translateTransform, 0, probe) - mapped;
+
+                double det = basisX.X * basisY.Y - basisX.Y * basisY.X;
+                if (Math.Abs(det) < 1e-9)
+                    return;
+
+                double deltaTx = (error.X * basisY.Y - error.Y * basisY.X) / det;
+                double deltaTy = (basisX.X * error.Y - basisX.Y * error.X) / det;
+                translateTransform.X += deltaTx;
+                translateTransform.Y += deltaTy;
+            }
+        }
+
+        private Point SampleMappedWithTranslationDelta(Point localAnchor, TranslateTransform translateTransform, double deltaX, double deltaY)
+        {
+            translateTransform.X += deltaX;
+            translateTransform.Y += deltaY;
+
+            Point mapped = localAnchor;
+            Matrix? matrix = CurrentImage.TransformToVisual(_imageContainer);
+            if (matrix.HasValue)
+                mapped = matrix.Value.Transform(localAnchor);
+
+            translateTransform.X -= deltaX;
+            translateTransform.Y -= deltaY;
+            return mapped;
         }
         
         private void OnPhotoStagePointerPressed(object? sender, PointerPressedEventArgs e)
