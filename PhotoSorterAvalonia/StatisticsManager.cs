@@ -62,10 +62,6 @@ namespace PhotoSorterAvalonia
                 string directory = Path.GetDirectoryName(StatisticsFilePath)!;
                 Directory.CreateDirectory(directory);
 
-                // Update session information
-                data.LastSessionDate = DateTime.Now;
-                data.SessionCount++;
-
                 // Save to file
                 string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(StatisticsFilePath, json);
@@ -163,8 +159,8 @@ namespace PhotoSorterAvalonia
                 GoodCount = Math.Max(persistentData.GoodCount, folderStats.GoodCount),
                 VeryGoodCount = Math.Max(persistentData.VeryGoodCount, folderStats.VeryGoodCount),
                 SortedOutCount = Math.Max(persistentData.SortedOutCount, folderStats.SortedOutCount),
-                LastSessionDate = DateTime.Now,
-                SessionCount = persistentData.SessionCount + 1
+                LastSessionDate = persistentData.LastSessionDate,
+                SessionCount = persistentData.SessionCount
             };
         }
 
