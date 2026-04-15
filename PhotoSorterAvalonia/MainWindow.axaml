@@ -91,7 +91,7 @@
                                     <TextBlock Text="• Drag on preview: Pan (does not sort)" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Trackpad scroll on preview: Zoom" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• H: Show/hide instructions" FontSize="14" Foreground="White"/>
-                                    <TextBlock Text="• Escape: Quit with statistics" FontSize="14" Foreground="White"/>
+                                    <TextBlock Text="• Escape: Quit application" FontSize="14" Foreground="White"/>
                                     <TextBlock Text="• Folder (bottom bar): Switch between the configured root and Good / Very good / Sorted out under that root" 
                                                FontSize="14" Foreground="White" TextWrapping="Wrap"/>
                                 </StackPanel>

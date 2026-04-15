@@ -201,7 +201,7 @@ namespace PhotoSorterAvalonia
         ///   
         /// Application:
         ///   H           - Toggle help overlay
-        ///   Escape      - Quit with statistics
+        ///   Escape      - Quit application
         /// </summary>
         private async void OnKeyDown(object? sender, KeyEventArgs e)
         {
@@ -288,7 +288,7 @@ namespace PhotoSorterAvalonia
                     break;
                     
                 case Key.Escape:
-                    await QuitWithFinalStatsAsync();
+                    QuitApplication();
                     e.Handled = true;
                     break;
             }
@@ -312,9 +312,9 @@ namespace PhotoSorterAvalonia
             Dispatcher.UIThread.Post(() => SetWorkingFolder(path), DispatcherPriority.Background);
         }
         
-        private async void Quit_Click(object? sender, RoutedEventArgs e)
+        private void Quit_Click(object? sender, RoutedEventArgs e)
         {
-            await QuitWithFinalStatsAsync();
+            QuitApplication();
         }
         
         private void StartSorting_Click(object? sender, RoutedEventArgs e)
@@ -365,9 +365,9 @@ namespace PhotoSorterAvalonia
             _ = ShowTextDialogAsync(title, text, width, height, scroll);
         
         /// <summary>
-        /// Shows final statistics in a dialog window, including persistent statistics.
+        /// Saves the current session statistics into persistent storage.
         /// </summary>
-        private async Task ShowFinalStatisticsAsync()
+        private void SaveSessionStatistics()
         {
             int sessionTotalProcessed = _sessionMovesToGood + _sessionMovesToVeryGood + _sessionMovesToSortedOut;
 
@@ -381,41 +381,11 @@ namespace PhotoSorterAvalonia
             
             // Save the merged statistics
             StatisticsManager.SaveStatistics(mergedStats);
-            
-            string stats = $"📊 FINAL STATISTICS\n" +
-                          $"==================\n\n" +
-                          
-                          $"📂 Working folder:\n" +
-                          $"   {_workingFolder}\n\n" +
-                          
-                          $"📈 Current Session:\n" +
-                          $"   • Photos processed: {sessionTotalProcessed}\n" +
-                          $"   • Sorted out: {_sessionMovesToSortedOut}\n" +
-                          $"   • Good: {_sessionMovesToGood}\n" +
-                          $"   • Very Good: {_sessionMovesToVeryGood}\n\n" +
-                          
-                          $"📊 Persistent Statistics (All Sessions):\n" +
-                          $"   • Total photos processed: {mergedStats.TotalPhotosProcessed}\n" +
-                          $"   • Total sorted out: {mergedStats.SortedOutCount}\n" +
-                          $"   • Total good: {mergedStats.GoodCount}\n" +
-                          $"   • Total very good: {mergedStats.VeryGoodCount}\n" +
-                          $"   • Session count: {mergedStats.SessionCount}\n" +
-                          $"   • Last session: {mergedStats.LastSessionDate:yyyy-MM-dd HH:mm}\n\n" +
-                          
-                          $"📁 Folder Locations:\n" +
-                          $"   • Sorted out: {_sortedOutFolder}\n" +
-                          $"   • Good: {_goodFolder}\n" +
-                          $"   • Very Good: {_veryGoodFolder}\n\n" +
-                          
-                          $"💾 Statistics saved to:\n" +
-                          $"   {StatisticsManager.GetStatisticsFilePath()}";
-            
-            await ShowTextDialogAsync("Photo Sorter - Complete", stats, 600, 450, scroll: true);
         }
 
-        private async Task QuitWithFinalStatsAsync()
+        private void QuitApplication()
         {
-            await ShowFinalStatisticsAsync();
+            SaveSessionStatistics();
             Close();
         }
         

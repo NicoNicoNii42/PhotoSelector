@@ -69,7 +69,7 @@ namespace PhotoSorterAvalonia
             double newScale = Math.Clamp(oldScale * factor, AppConfig.MinZoomScale, AppConfig.MaxZoomScale);
             if (Math.Abs(newScale - oldScale) < 1e-9)
                 return;
-            
+
             Point pointerInView = e.GetPosition(_imageContainer);
             Matrix? toViewBefore = CurrentImage.TransformToVisual(_imageContainer);
             Point? anchorLocal = null;

@@ -139,7 +139,7 @@ namespace PhotoSorterAvalonia
                 return;
             if (transformGroup.Children[0] is not TranslateTransform translateTransform)
                 return;
-            
+
             double w = CurrentImage.Bounds.Width;
             double h = CurrentImage.Bounds.Height;
             if (w < 1 || h < 1)
