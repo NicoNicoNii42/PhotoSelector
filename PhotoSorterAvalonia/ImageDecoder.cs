@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -11,8 +12,121 @@ namespace PhotoSorterAvalonia;
 /// </summary>
 internal static class ImageDecoder
 {
+    private static readonly object ExifToolResolveLock = new();
+    private static bool _exifToolPathResolved;
+    private static string? _exifToolExecutable;
+
     internal static void LogDiagnostic(string message) =>
         Console.WriteLine($"[ImageDiag {DateTime.Now:HH:mm:ss.fff}] {message}");
+
+    /// <summary>
+    /// GUI-launched macOS apps often cannot resolve the bare name <c>exiftool</c> (minimal PATH).
+    /// PATH prepends are not always applied reliably to the child process, so we use an absolute path
+    /// when Homebrew/MacPorts or <c>~/bin</c> installs are present.
+    /// </summary>
+    private static string? ResolveExifToolExecutable()
+    {
+        lock (ExifToolResolveLock)
+        {
+            if (_exifToolPathResolved)
+                return _exifToolExecutable;
+
+            _exifToolPathResolved = true;
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            if (OperatingSystem.IsMacOS())
+            {
+                string[] macCandidates =
+                [
+                    "/opt/homebrew/bin/exiftool",
+                    "/usr/local/bin/exiftool",
+                    "/opt/local/bin/exiftool",
+                    Path.Combine(home, "bin", "exiftool"),
+                    Path.Combine(home, ".local", "bin", "exiftool"),
+                ];
+                foreach (string c in macCandidates)
+                {
+                    try
+                    {
+                        if (File.Exists(c))
+                        {
+                            _exifToolExecutable = c;
+                            LogDiagnostic($"Using exiftool: '{c}'");
+                            return _exifToolExecutable;
+                        }
+                    }
+                    catch
+                    {
+                        // Invalid path segment.
+                    }
+                }
+            }
+
+            string pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
+            foreach (string dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                foreach (string name in ExifToolBinaryNames())
+                {
+                    try
+                    {
+                        string full = Path.Combine(dir, name);
+                        if (File.Exists(full))
+                        {
+                            _exifToolExecutable = full;
+                            LogDiagnostic($"Using exiftool from PATH: '{full}'");
+                            return _exifToolExecutable;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            LogDiagnostic("exiftool not found. Install with: brew install exiftool");
+            _exifToolExecutable = null;
+            return null;
+        }
+    }
+
+    private static IEnumerable<string> ExifToolBinaryNames()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            yield return "exiftool.exe";
+            yield return "exiftool.cmd";
+        }
+
+        yield return "exiftool";
+    }
+
+    /// <summary>
+    /// Last resort when <see cref="ResolveExifToolExecutable"/> did not find a file on disk.
+    /// </summary>
+    private static void EnsureMacOSPathForExifTool(ProcessStartInfo startInfo)
+    {
+        if (!OperatingSystem.IsMacOS())
+            return;
+
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string extra = $"/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:{home}/bin";
+        if (!startInfo.Environment.TryGetValue("PATH", out var path) || string.IsNullOrEmpty(path))
+            path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        startInfo.Environment["PATH"] = extra + Path.PathSeparator + path;
+    }
+
+    private static void ApplyExifToolExecutable(ProcessStartInfo startInfo)
+    {
+        string? exe = ResolveExifToolExecutable();
+        if (exe != null)
+        {
+            startInfo.FileName = exe;
+            return;
+        }
+
+        startInfo.FileName = OperatingSystem.IsWindows() ? "exiftool.exe" : "exiftool";
+        EnsureMacOSPathForExifTool(startInfo);
+    }
 
     internal static int GetExifOrientation(string imagePath)
     {
@@ -21,12 +135,12 @@ internal static class ImageDecoder
         {
             var startInfo = new ProcessStartInfo
             {
-                FileName = "exiftool",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+            ApplyExifToolExecutable(startInfo);
             startInfo.ArgumentList.Add("-Orientation");
             startInfo.ArgumentList.Add("-n");
             startInfo.ArgumentList.Add("-s3");
@@ -242,12 +356,12 @@ internal static class ImageDecoder
         {
             var startInfo = new ProcessStartInfo
             {
-                FileName = "exiftool",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+            ApplyExifToolExecutable(startInfo);
             startInfo.ArgumentList.Add("-b");
             startInfo.ArgumentList.Add(exifArgument);
             startInfo.ArgumentList.Add(imagePath);
