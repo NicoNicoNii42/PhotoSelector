@@ -38,6 +38,77 @@ namespace PhotoSorterAvalonia
             
             return Math.Min(vw / cw, vh / ch);
         }
+
+        /// <summary>
+        /// Resolves how much to change <see cref="TranslateTransform"/> X/Y so that a fixed point on the image
+        /// moves by <paramref name="sdx"/>, <paramref name="sdy"/> in <see cref="_imageContainer"/> coordinates.
+        /// Uses the real transform chain (Viewbox, zoom, rotation, RenderTransformOrigin), so pan tracks the pointer
+        /// at the same screen speed at every zoom level.
+        /// </summary>
+        private bool TryResolvePanTranslationDeltaFromContainerDelta(
+            double sdx, double sdy, TranslateTransform translateTransform, out double dtx, out double dty)
+        {
+            dtx = 0;
+            dty = 0;
+
+            double lw = CurrentImage.Bounds.Width;
+            double lh = CurrentImage.Bounds.Height;
+            if (lw < 1 || lh < 1)
+            {
+                if (CurrentImage.Source is Bitmap bmp)
+                {
+                    Size logical = GetBitmapLogicalSize(bmp);
+                    lw = logical.Width;
+                    lh = logical.Height;
+                }
+            }
+
+            if (lw < 1e-6 || lh < 1e-6)
+                return false;
+
+            Point localRef = new Point(lw * 0.5, lh * 0.5);
+
+            const double eps = 1.0;
+            double ox = translateTransform.X;
+            double oy = translateTransform.Y;
+
+            Matrix? m0 = CurrentImage.TransformToVisual(_imageContainer);
+            if (!m0.HasValue)
+                return false;
+            Point p0 = m0.Value.Transform(localRef);
+
+            translateTransform.X = ox + eps;
+            translateTransform.Y = oy;
+            Matrix? mx = CurrentImage.TransformToVisual(_imageContainer);
+            translateTransform.X = ox;
+            translateTransform.Y = oy;
+            if (!mx.HasValue)
+                return false;
+            Point px = mx.Value.Transform(localRef);
+
+            translateTransform.X = ox;
+            translateTransform.Y = oy + eps;
+            Matrix? my = CurrentImage.TransformToVisual(_imageContainer);
+            translateTransform.X = ox;
+            translateTransform.Y = oy;
+            if (!my.HasValue)
+                return false;
+            Point py = my.Value.Transform(localRef);
+
+            Vector vx = (px - p0) / eps;
+            Vector vy = (py - p0) / eps;
+
+            double det = vx.X * vy.Y - vx.Y * vy.X;
+            if (Math.Abs(det) < 1e-12)
+                return false;
+
+            double m = AppConfig.PointerPanSpeedMultiplier;
+            double sdxT = sdx * m;
+            double sdyT = sdy * m;
+            dtx = (sdxT * vy.Y - sdyT * vy.X) / det;
+            dty = (vx.X * sdyT - vx.Y * sdxT) / det;
+            return true;
+        }
         
         private bool EventSourceIsUnderInstructionsOverlay(object? source)
         {
@@ -187,19 +258,24 @@ namespace PhotoSorterAvalonia
             
             if (Math.Abs(sdx) < double.Epsilon && Math.Abs(sdy) < double.Epsilon)
                 return;
-            
-            double u = GetImageContainerUniformScale();
-            if (u <= 0)
+
+            if (CurrentImage.RenderTransform is not TransformGroup transformGroup ||
+                transformGroup.Children[0] is not TranslateTransform translateTransform)
                 return;
-            
-            double rad = -_currentRotation * (Math.PI / 180.0);
-            double cos = Math.Cos(rad);
-            double sin = Math.Sin(rad);
-            // Map viewbox pointer delta to translate units. Do not divide by zoom scale here: zoom is
-            // already in RenderTransform; an extra /_currentScale roughly halves pan range at 2× zoom.
-            double innerDx = (cos * sdx + sin * sdy) / u * AppConfig.PointerPanSpeedMultiplier;
-            double innerDy = (-sin * sdx + cos * sdy) / u * AppConfig.PointerPanSpeedMultiplier;
-            
+
+            if (!TryResolvePanTranslationDeltaFromContainerDelta(sdx, sdy, translateTransform, out double innerDx, out double innerDy))
+            {
+                double u = GetImageContainerUniformScale();
+                if (u <= 0)
+                    return;
+
+                double rad = -_currentRotation * (Math.PI / 180.0);
+                double cos = Math.Cos(rad);
+                double sin = Math.Sin(rad);
+                innerDx = (cos * sdx + sin * sdy) / u * AppConfig.PointerPanSpeedMultiplier;
+                innerDy = (-sin * sdx + cos * sdy) / u * AppConfig.PointerPanSpeedMultiplier;
+            }
+
             ApplyTranslationWithBounds(innerDx, innerDy);
         }
         

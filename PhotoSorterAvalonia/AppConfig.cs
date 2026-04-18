@@ -62,7 +62,7 @@ namespace PhotoSorterAvalonia
         /// Zoom factor for each zoom in/out step.
         /// Default: 1.1 (10% zoom per step)
         /// </summary>
-        public const double ZoomFactor = 1.1;
+        public const double ZoomFactor = 1.05;
         
         /// <summary>
         /// Trackpad/wheel zoom maps exponent = DeltaY / this value. Smaller = faster zoom
@@ -71,10 +71,10 @@ namespace PhotoSorterAvalonia
         public const double WheelScrollZoomNotchDivisor = 1.0;
         
         /// <summary>
-        /// Multiplier for drag-to-pan after mapping pointer movement from viewbox space (1 = default).
+        /// Scales drag-to-pan (1 = pointer movement matches image motion in the photo area at any zoom/rotation).
         /// Increase (e.g. 1.5–2.5) if panning still feels slow.
         /// </summary>
-        public const double PointerPanSpeedMultiplier = 2.0;
+        public const double PointerPanSpeedMultiplier = 1.0;
         
         /// <summary>
         /// Rotation step in degrees for manual rotation.
