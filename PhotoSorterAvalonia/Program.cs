@@ -11,6 +11,7 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        AppSettings.Load();
         AppConfig.Validate();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

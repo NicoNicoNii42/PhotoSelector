@@ -316,6 +316,17 @@ namespace PhotoSorterAvalonia
         {
             QuitApplication();
         }
+
+        private async void Settings_Click(object? sender, RoutedEventArgs e)
+        {
+            string previousRoot = GetStatisticsAnchorFolder();
+            var dlg = new SettingsWindow();
+            bool saved = await dlg.ShowDialog<bool>(this);
+            if (!saved)
+                return;
+            AppSettings.Reload();
+            ApplySavedAppSettings(previousRoot);
+        }
         
         private void StartSorting_Click(object? sender, RoutedEventArgs e)
         {

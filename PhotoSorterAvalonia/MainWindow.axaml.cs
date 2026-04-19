@@ -43,7 +43,7 @@ namespace PhotoSorterAvalonia
         private int _veryGoodCount;
         private int _sortedOutCount;
         
-        /// <summary>Top-level photo count under <see cref="AppConfig.SourceFolder"/> (stats panel Total line).</summary>
+        /// <summary>Top-level photo count under the configured library root (stats panel Total line).</summary>
         private int _statsPanelRootTotal;
         
         /// <summary>Photos moved into each bucket this session (for persistent stats merge).</summary>
@@ -123,7 +123,7 @@ namespace PhotoSorterAvalonia
         
         #region Initialization Methods
         
-        /// <summary>Fills the working-folder combo with root + sort destinations under <see cref="AppConfig.SourceFolder"/>.</summary>
+        /// <summary>Fills the working-folder combo with root + sort destinations under the library root.</summary>
         private void SetupWorkingFolderCombo()
         {
             _workingFolderComboUpdating = true;
@@ -257,18 +257,8 @@ namespace PhotoSorterAvalonia
             _sortedOutFolder = AppConfig.GetSortedOutFolderPath(anchor);
         }
         
-        /// <summary>Library root used for Good / Very good / Sorted out counts in the stats panel (preset buckets under <see cref="AppConfig.SourceFolder"/>).</summary>
-        private static string GetStatisticsAnchorFolder()
-        {
-            try
-            {
-                return Path.GetFullPath(AppConfig.SourceFolder);
-            }
-            catch
-            {
-                return AppConfig.SourceFolder;
-            }
-        }
+        /// <summary>Library root used for Good / Very good / Sorted out counts in the stats panel.</summary>
+        private static string GetStatisticsAnchorFolder() => AppConfig.GetLibraryRootFullPath();
         
         /// <summary>Re-reads bucket file counts under the source root (same buckets for Root / Good / Very good / Sorted out views).</summary>
         private void RefreshStatisticsBucketCounts()
@@ -293,6 +283,71 @@ namespace PhotoSorterAvalonia
             _sessionMovesToSortedOut = 0;
         }
         
+        /// <summary>Call after settings were saved to disk. Migrates the working folder if the library root moved.</summary>
+        private void ApplySavedAppSettings(string previousRootFullPath)
+        {
+            try
+            {
+                string oldNorm = Path.GetFullPath(previousRootFullPath);
+                string newNorm = Path.GetFullPath(GetStatisticsAnchorFolder());
+                string wfNorm = Path.GetFullPath(_workingFolder);
+
+                string oldWithSep = oldNorm.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                bool underOld = string.Equals(wfNorm, oldNorm, StringComparison.OrdinalIgnoreCase)
+                    || wfNorm.StartsWith(oldWithSep, StringComparison.OrdinalIgnoreCase);
+
+                if (underOld && !string.Equals(oldNorm, newNorm, StringComparison.OrdinalIgnoreCase))
+                {
+                    string rel = Path.GetRelativePath(oldNorm, wfNorm);
+                    _workingFolder = string.Equals(rel, ".", StringComparison.Ordinal)
+                        ? newNorm
+                        : Path.GetFullPath(Path.Combine(newNorm, rel));
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ApplySavedAppSettings migration: {ex.Message}");
+                try
+                {
+                    _workingFolder = Path.GetFullPath(GetStatisticsAnchorFolder());
+                }
+                catch
+                {
+                    // keep existing _workingFolder
+                }
+            }
+
+            SessionSettings.Save(new SessionSettings.Data { WorkingFolder = _workingFolder });
+            Interlocked.Increment(ref _folderSession);
+            InitializeFolderPaths();
+            CreateDestinationFolders();
+            ClearAllImageCaches();
+            _currentIndex = 0;
+
+            _persistentStats = StatisticsManager.LoadStatistics();
+            string statsRoot = GetStatisticsAnchorFolder();
+            _persistentStats = StatisticsManager.MergeWithFolderScan(
+                _persistentStats,
+                AppConfig.GetGoodFolderPath(statsRoot),
+                AppConfig.GetVeryGoodFolderPath(statsRoot),
+                AppConfig.GetSortedOutFolderPath(statsRoot));
+
+            LoadPhotos();
+            ResetSessionMoveCounts();
+            UpdateDisplay();
+            Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    SetupWorkingFolderCombo();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"SetupWorkingFolderCombo failed: {ex}");
+                }
+            }, DispatcherPriority.Background);
+        }
+        
         private static string ResolveInitialWorkingFolder(SessionSettings.Data session)
         {
             if (!string.IsNullOrWhiteSpace(session.WorkingFolder))
@@ -311,11 +366,11 @@ namespace PhotoSorterAvalonia
             
             try
             {
-                return Path.GetFullPath(AppConfig.SourceFolder);
+                return Path.GetFullPath(AppConfig.GetLibraryRootFullPath());
             }
             catch
             {
-                return AppConfig.SourceFolder;
+                return AppConfig.GetLibraryRootFullPath();
             }
         }
         

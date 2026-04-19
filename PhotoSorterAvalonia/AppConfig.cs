@@ -16,10 +16,9 @@ namespace PhotoSorterAvalonia
         // ============================================
         
         /// <summary>
-        /// Source folder containing photos to sort.
-        /// Default: "/Users/niconiconii/Library/Mobile Documents/com~apple~CloudDocs/DCIM/100LEICA"
+        /// Default library root when no saved settings exist yet (overridden by <see cref="AppSettings"/>).
         /// </summary>
-        public const string SourceFolder = "/Users/niconiconii/Library/Mobile Documents/com~apple~CloudDocs/DCIM/100LEICA";
+        public const string DefaultRootFolder = "/Users/niconiconii/Library/Mobile Documents/com~apple~CloudDocs/DCIM/100LEICA";
         
         /// <summary>
         /// File extension pattern for photos to sort.
@@ -30,17 +29,17 @@ namespace PhotoSorterAvalonia
         /// <summary>
         /// Relative path (from the working folder) for "good" moves. May include subfolders, e.g. "good".
         /// </summary>
-        public const string GoodFolderName = "good";
+        public const string DefaultGoodFolderName = "good";
         
         /// <summary>
-        /// Relative path (from the working folder) for "very good" moves, e.g. "verygood" or "round2/verygood".
+        /// Default relative path for "very good" moves, e.g. "verygood" or "round2/verygood".
         /// </summary>
-        public const string VeryGoodFolderName = "verygood";
+        public const string DefaultVeryGoodFolderName = "verygood";
         
         /// <summary>
-        /// Relative path (from the working folder) for "sorted out" moves, e.g. "sortedout" or "verygood/sortedout".
+        /// Default relative path for "sorted out" moves, e.g. "sortedout" or "verygood/sortedout".
         /// </summary>
-        public const string SortedOutFolderName = "sortedout";
+        public const string DefaultSortedOutFolderName = "sortedout";
         
         // ============================================
         // Zoom and Rotation Configuration
@@ -146,36 +145,50 @@ namespace PhotoSorterAvalonia
         
         /// <summary>Destination folder for "good" under <paramref name="workingFolder"/>.</summary>
         public static string GetGoodFolderPath(string workingFolder) =>
-            CombineUnderWorkingFolder(workingFolder, GoodFolderName);
+            CombineUnderWorkingFolder(workingFolder, AppSettings.Current.GoodFolderName);
         
         /// <summary>Destination folder for "very good" under <paramref name="workingFolder"/>.</summary>
         public static string GetVeryGoodFolderPath(string workingFolder) =>
-            CombineUnderWorkingFolder(workingFolder, VeryGoodFolderName);
+            CombineUnderWorkingFolder(workingFolder, AppSettings.Current.VeryGoodFolderName);
         
         /// <summary>Destination folder for "sorted out" under <paramref name="workingFolder"/>.</summary>
         public static string GetSortedOutFolderPath(string workingFolder) =>
-            CombineUnderWorkingFolder(workingFolder, SortedOutFolderName);
+            CombineUnderWorkingFolder(workingFolder, AppSettings.Current.SortedOutFolderName);
         
-        /// <summary>Default destinations when no working folder override exists (uses <see cref="SourceFolder"/>).</summary>
-        public static string GetGoodFolderPath() => GetGoodFolderPath(SourceFolder);
+        /// <summary>Default destinations under the configured library root.</summary>
+        public static string GetGoodFolderPath() => GetGoodFolderPath(GetLibraryRootFullPath());
         
-        public static string GetVeryGoodFolderPath() => GetVeryGoodFolderPath(SourceFolder);
+        public static string GetVeryGoodFolderPath() => GetVeryGoodFolderPath(GetLibraryRootFullPath());
         
-        public static string GetSortedOutFolderPath() => GetSortedOutFolderPath(SourceFolder);
+        public static string GetSortedOutFolderPath() => GetSortedOutFolderPath(GetLibraryRootFullPath());
+        
+        /// <summary>Resolved library root from <see cref="AppSettings"/>.</summary>
+        public static string GetLibraryRootFullPath()
+        {
+            string root = AppSettings.Current.RootFolder;
+            try
+            {
+                return Path.GetFullPath(root);
+            }
+            catch
+            {
+                return root;
+            }
+        }
         
         /// <summary>
-        /// Working-folder presets anchored at <see cref="SourceFolder"/>: the root plus each sort destination under that root.
+        /// Working-folder presets: the library root plus each sort destination under that root.
         /// </summary>
         public static List<(string Label, string Path)> GetWorkingFolderPresetChoices()
         {
             string root;
             try
             {
-                root = Path.GetFullPath(SourceFolder);
+                root = Path.GetFullPath(AppSettings.Current.RootFolder);
             }
             catch
             {
-                root = SourceFolder;
+                root = AppSettings.Current.RootFolder;
             }
             
             return new List<(string Label, string Path)>
@@ -193,8 +206,8 @@ namespace PhotoSorterAvalonia
         /// </summary>
         public static void Validate()
         {
-            if (string.IsNullOrWhiteSpace(SourceFolder))
-                throw new InvalidOperationException("SourceFolder cannot be empty");
+            if (AppSettings.Validate(AppSettings.Current, requireRootExists: false) is { } err)
+                throw new InvalidOperationException(err);
             
             if (string.IsNullOrWhiteSpace(FileExtension))
                 throw new InvalidOperationException("FileExtension cannot be empty");

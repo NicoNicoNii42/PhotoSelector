@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PhotoSorterAvalonia.SettingsWindow"
+        Title="Photo Sorter — Settings"
+        Width="560" Height="420"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+    <Grid Margin="20" RowDefinitions="Auto,*" RowSpacing="16">
+        <TextBlock Grid.Row="0" Text="Library and sort folders"
+                   FontSize="18" FontWeight="SemiBold"/>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="14">
+                <TextBlock Text="Library root (photos and sort destinations live under this folder)"
+                           FontSize="12" Foreground="#666" TextWrapping="Wrap"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                    <TextBox x:Name="RootPathText" Grid.Column="0"
+                             PlaceholderText="Path to your photo library folder"
+                             MinHeight="36"/>
+                    <Button x:Name="BrowseRootButton" Grid.Column="1"
+                            Content="Browse…" MinWidth="100" Padding="12,8"
+                            Click="BrowseRoot_Click"/>
+                </Grid>
+
+                <TextBlock Text="Destination subfolders (relative to the library root). You can use nested paths, e.g. round2/picks"
+                           FontSize="12" Foreground="#666" TextWrapping="Wrap" Margin="0,8,0,0"/>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Good" FontWeight="SemiBold" FontSize="13"/>
+                    <TextBox x:Name="GoodFolderText" MinHeight="32"/>
+                </StackPanel>
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Very good" FontWeight="SemiBold" FontSize="13"/>
+                    <TextBox x:Name="VeryGoodFolderText" MinHeight="32"/>
+                </StackPanel>
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Sorted out" FontWeight="SemiBold" FontSize="13"/>
+                    <TextBox x:Name="SortedOutFolderText" MinHeight="32"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,16,0,0">
+                    <Button x:Name="CancelButton" Content="Cancel" MinWidth="100" Padding="12,8"
+                            Click="Cancel_Click"/>
+                    <Button x:Name="OkButton" Content="Save" MinWidth="100" Padding="12,8"
+                            IsDefault="True"
+                            Click="Ok_Click"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>
