@@ -33,13 +33,11 @@ namespace PhotoSorterAvalonia
             {
                 _currentIndex++;
                 UpdateDisplay();
-                FileText.Text = "→ Next photo";
             }
             else if (_currentIndex == _photos.Count - 1)
             {
                 _currentIndex = 0;
                 UpdateDisplay();
-                FileText.Text = "↻ Wrapped to first photo";
             }
         }
         
@@ -55,13 +53,11 @@ namespace PhotoSorterAvalonia
             {
                 _currentIndex--;
                 UpdateDisplay();
-                FileText.Text = "← Previous photo";
             }
             else if (_currentIndex == 0)
             {
                 _currentIndex = _photos.Count - 1;
                 UpdateDisplay();
-                FileText.Text = "↺ Wrapped to last photo";
             }
         }
         
@@ -113,7 +109,6 @@ namespace PhotoSorterAvalonia
                 if (string.Equals(currentFull, destinationFull, StringComparison.OrdinalIgnoreCase))
                 {
                     MoveToNext();
-                    FileText.Text = $"{fileName} already in {actionName}";
                     return;
                 }
 
@@ -172,7 +167,6 @@ namespace PhotoSorterAvalonia
                 }
                 
                 UpdateDisplay();
-                FileText.Text = $"{fileName} → {actionName}";
             }
             catch (Exception ex)
             {
