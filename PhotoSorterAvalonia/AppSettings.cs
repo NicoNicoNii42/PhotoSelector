@@ -51,13 +51,7 @@ namespace PhotoSorterAvalonia
                 Console.WriteLine($"Error loading app settings: {ex.Message}");
             }
 
-            string root = AppConfig.DefaultRootFolder;
-            if (!Directory.Exists(root))
-            {
-                string pictures = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
-                if (!string.IsNullOrWhiteSpace(pictures) && Directory.Exists(pictures))
-                    root = pictures;
-            }
+            string root = GetDefaultLibraryRoot();
 
             _current = Normalize(new Data
             {
@@ -84,6 +78,19 @@ namespace PhotoSorterAvalonia
             {
                 Console.WriteLine($"Error saving app settings: {ex.Message}");
             }
+        }
+
+        private static string GetDefaultLibraryRoot()
+        {
+            string pictures = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+            if (!string.IsNullOrWhiteSpace(pictures) && Directory.Exists(pictures))
+                return pictures;
+
+            string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (!string.IsNullOrWhiteSpace(profile) && Directory.Exists(profile))
+                return profile;
+
+            return Directory.GetCurrentDirectory();
         }
 
         private static Data Normalize(Data d)

@@ -16,11 +16,6 @@ namespace PhotoSorterAvalonia
         // ============================================
         
         /// <summary>
-        /// Default library root when no saved settings exist yet (overridden by <see cref="AppSettings"/>).
-        /// </summary>
-        public const string DefaultRootFolder = "/Users/niconiconii/Library/Mobile Documents/com~apple~CloudDocs/DCIM/100LEICA";
-        
-        /// <summary>
         /// File extension pattern for photos to sort.
         /// Default: "*.DNG"
         /// </summary>
