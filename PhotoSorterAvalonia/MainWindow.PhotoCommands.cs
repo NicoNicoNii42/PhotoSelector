@@ -314,6 +314,7 @@ namespace PhotoSorterAvalonia
         private async void Settings_Click(object? sender, RoutedEventArgs e)
         {
             string previousRoot = GetStatisticsAnchorFolder();
+            SaveSessionStatistics(resetSessionMoveCounts: true);
             var dlg = new SettingsWindow();
             bool saved = await dlg.ShowDialog<bool>(this);
             if (!saved)
@@ -372,20 +373,21 @@ namespace PhotoSorterAvalonia
         /// <summary>
         /// Saves the current session statistics into persistent storage.
         /// </summary>
-        private void SaveSessionStatistics()
+        private void SaveSessionStatistics(bool resetSessionMoveCounts = false)
         {
             int sessionTotalProcessed = _sessionMovesToGood + _sessionMovesToVeryGood + _sessionMovesToSortedOut;
+            var folderStats = ScanCurrentDestinationFolderStatistics();
 
-            // Merge current session statistics with persistent statistics
             var mergedStats = StatisticsManager.MergeStatistics(
                 _persistentStats,
-                _sessionMovesToGood,
-                _sessionMovesToVeryGood,
-                _sessionMovesToSortedOut,
+                folderStats,
                 sessionTotalProcessed);
             
-            // Save the merged statistics
             StatisticsManager.SaveStatistics(mergedStats);
+            _persistentStats = mergedStats;
+
+            if (resetSessionMoveCounts)
+                ResetSessionMoveCounts();
         }
 
         private void QuitApplication()

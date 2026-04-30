@@ -220,6 +220,7 @@ namespace PhotoSorterAvalonia
                 return;
             }
             
+            SaveSessionStatistics(resetSessionMoveCounts: true);
             Interlocked.Increment(ref _folderSession);
             
             _workingFolder = full;
@@ -263,17 +264,22 @@ namespace PhotoSorterAvalonia
         /// <summary>Re-reads bucket file counts under the source root (same buckets for Root / Good / Very good / Sorted out views).</summary>
         private void RefreshStatisticsBucketCounts()
         {
+            var folderStats = ScanCurrentDestinationFolderStatistics();
+            _goodCount = folderStats.GoodCount;
+            _veryGoodCount = folderStats.VeryGoodCount;
+            _sortedOutCount = folderStats.SortedOutCount;
+        }
+
+        private StatisticsManager.StatisticsData ScanCurrentDestinationFolderStatistics()
+        {
             string anchor = GetStatisticsAnchorFolder();
             _statsPanelRootTotal = Directory.Exists(anchor)
                 ? Directory.GetFiles(anchor, AppConfig.FileExtension).Length
                 : 0;
-            var folderStats = StatisticsManager.ScanFolderStatistics(
+            return StatisticsManager.ScanFolderStatistics(
                 AppConfig.GetGoodFolderPath(anchor),
                 AppConfig.GetVeryGoodFolderPath(anchor),
                 AppConfig.GetSortedOutFolderPath(anchor));
-            _goodCount = folderStats.GoodCount;
-            _veryGoodCount = folderStats.VeryGoodCount;
-            _sortedOutCount = folderStats.SortedOutCount;
         }
         
         private void ResetSessionMoveCounts()

@@ -151,14 +151,12 @@ namespace PhotoSorterAvalonia
         {
             var folderStats = ScanFolderStatistics(goodFolder, veryGoodFolder, sortedOutFolder);
             
-            // Use the maximum values between persistent data and folder scan
-            // This ensures we don't lose data if files were moved manually
             return new StatisticsData
             {
-                TotalPhotosProcessed = Math.Max(persistentData.TotalPhotosProcessed, folderStats.TotalPhotosProcessed),
-                GoodCount = Math.Max(persistentData.GoodCount, folderStats.GoodCount),
-                VeryGoodCount = Math.Max(persistentData.VeryGoodCount, folderStats.VeryGoodCount),
-                SortedOutCount = Math.Max(persistentData.SortedOutCount, folderStats.SortedOutCount),
+                TotalPhotosProcessed = folderStats.TotalPhotosProcessed,
+                GoodCount = folderStats.GoodCount,
+                VeryGoodCount = folderStats.VeryGoodCount,
+                SortedOutCount = folderStats.SortedOutCount,
                 LastSessionDate = persistentData.LastSessionDate,
                 SessionCount = persistentData.SessionCount
             };
@@ -168,26 +166,23 @@ namespace PhotoSorterAvalonia
         /// Merges current session statistics with persistent statistics.
         /// </summary>
         /// <param name="persistentData">The persistent statistics data.</param>
-        /// <param name="currentGood">Current session good count.</param>
-        /// <param name="currentVeryGood">Current session very good count.</param>
-        /// <param name="currentSortedOut">Current session sorted out count.</param>
-        /// <param name="currentTotal">Current session total photos processed.</param>
+        /// <param name="folderStats">Current scanned destination folder counts.</param>
+        /// <param name="sessionTotalProcessed">Number of photos moved during this session segment.</param>
         /// <returns>Updated statistics data.</returns>
         public static StatisticsData MergeStatistics(
             StatisticsData persistentData,
-            int currentGood,
-            int currentVeryGood,
-            int currentSortedOut,
-            int currentTotal)
+            StatisticsData folderStats,
+            int sessionTotalProcessed)
         {
+            bool sessionDidWork = sessionTotalProcessed > 0;
             return new StatisticsData
             {
-                TotalPhotosProcessed = persistentData.TotalPhotosProcessed + currentTotal,
-                GoodCount = persistentData.GoodCount + currentGood,
-                VeryGoodCount = persistentData.VeryGoodCount + currentVeryGood,
-                SortedOutCount = persistentData.SortedOutCount + currentSortedOut,
-                LastSessionDate = DateTime.Now,
-                SessionCount = persistentData.SessionCount + 1
+                TotalPhotosProcessed = folderStats.TotalPhotosProcessed,
+                GoodCount = folderStats.GoodCount,
+                VeryGoodCount = folderStats.VeryGoodCount,
+                SortedOutCount = folderStats.SortedOutCount,
+                LastSessionDate = sessionDidWork ? DateTime.Now : persistentData.LastSessionDate,
+                SessionCount = persistentData.SessionCount + (sessionDidWork ? 1 : 0)
             };
         }
 

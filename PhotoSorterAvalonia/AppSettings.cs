@@ -122,6 +122,9 @@ namespace PhotoSorterAvalonia
             e = ValidateRelativeFolderName(d.SortedOutFolderName, "Sorted out folder name");
             if (e != null) return e;
 
+            e = ValidateDistinctDestinationFolders(d);
+            if (e != null) return e;
+
             return null;
         }
 
@@ -148,6 +151,39 @@ namespace PhotoSorterAvalonia
             }
 
             return null;
+        }
+
+        private static string? ValidateDistinctDestinationFolders(Data d)
+        {
+            var paths = new (string Label, string Path)[]
+            {
+                ("Good", ResolveDestinationPathForComparison(d.RootFolder, d.GoodFolderName)),
+                ("Very good", ResolveDestinationPathForComparison(d.RootFolder, d.VeryGoodFolderName)),
+                ("Sorted out", ResolveDestinationPathForComparison(d.RootFolder, d.SortedOutFolderName)),
+            };
+
+            for (int i = 0; i < paths.Length; i++)
+            {
+                for (int j = i + 1; j < paths.Length; j++)
+                {
+                    if (string.Equals(paths[i].Path, paths[j].Path, StringComparison.OrdinalIgnoreCase))
+                        return $"{paths[i].Label} and {paths[j].Label} folders must be different.";
+                }
+            }
+
+            return null;
+        }
+
+        private static string ResolveDestinationPathForComparison(string rootFolder, string relativeFolder)
+        {
+            try
+            {
+                return Path.GetFullPath(AppConfig.CombineUnderWorkingFolder(rootFolder, relativeFolder));
+            }
+            catch
+            {
+                return AppConfig.CombineUnderWorkingFolder(rootFolder, relativeFolder);
+            }
         }
     }
 }

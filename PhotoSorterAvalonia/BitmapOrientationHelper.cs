@@ -8,30 +8,21 @@ using Avalonia.Media.Imaging;
 namespace PhotoSorterAvalonia;
 
 /// <summary>
-/// Bakes common EXIF orientation tags into pixel data on the UI thread (requires rendering).
+/// Bakes EXIF orientation tags into pixel data on the UI thread (requires rendering).
 /// </summary>
 internal static class BitmapOrientationHelper
 {
     /// <summary>
-    /// Normalizes EXIF orientations 1/3/6/8 into upright pixel data. Must run on the UI thread (RenderTargetBitmap.Render).
+    /// Normalizes EXIF orientations 1-8 into upright pixel data. Must run on the UI thread (RenderTargetBitmap.Render).
     /// </summary>
     internal static Bitmap NormalizeBitmapExifOnUiThread(Bitmap decoded, int exifOrientation)
     {
-        double angle = exifOrientation switch
-        {
-            1 => 0,
-            3 => 180,
-            6 => 90,
-            8 => 270,
-            _ => 0
-        };
-
-        if (angle == 0)
+        if (exifOrientation == 1)
             return decoded;
 
         try
         {
-            var baked = BakeOrientationByRendering(decoded, angle);
+            var baked = BakeOrientationByRendering(decoded, exifOrientation);
             decoded.Dispose();
             return baked;
         }
@@ -43,12 +34,12 @@ internal static class BitmapOrientationHelper
     }
 
     /// <summary>
-    /// Renders a rotated copy of the bitmap (same angles as the former EXIF RenderTransform mapping).
+    /// Renders an oriented copy of the bitmap.
     /// </summary>
-    private static Bitmap BakeOrientationByRendering(Bitmap source, double angleDeg)
+    private static Bitmap BakeOrientationByRendering(Bitmap source, int exifOrientation)
     {
         var ps = source.PixelSize;
-        bool swapDimensions = angleDeg is 90 or 270;
+        bool swapDimensions = exifOrientation is 5 or 6 or 7 or 8;
         int outW = swapDimensions ? ps.Height : ps.Width;
         int outH = swapDimensions ? ps.Width : ps.Height;
 
@@ -58,11 +49,11 @@ internal static class BitmapOrientationHelper
             Stretch = Stretch.None,
             Width = ps.Width,
             Height = ps.Height,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
         };
-        imageControl.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
-        imageControl.RenderTransform = new RotateTransform { Angle = angleDeg };
+        imageControl.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Absolute);
+        imageControl.RenderTransform = new MatrixTransform(GetExifOrientationMatrix(exifOrientation, ps.Width, ps.Height));
 
         var container = new Grid
         {
@@ -80,5 +71,20 @@ internal static class BitmapOrientationHelper
         var rtb = new RenderTargetBitmap(new PixelSize(outW, outH), source.Dpi);
         rtb.Render(container);
         return rtb;
+    }
+
+    private static Matrix GetExifOrientationMatrix(int exifOrientation, int width, int height)
+    {
+        return exifOrientation switch
+        {
+            2 => new Matrix(-1, 0, 0, 1, width, 0),
+            3 => new Matrix(-1, 0, 0, -1, width, height),
+            4 => new Matrix(1, 0, 0, -1, 0, height),
+            5 => new Matrix(0, 1, 1, 0, 0, 0),
+            6 => new Matrix(0, 1, -1, 0, height, 0),
+            7 => new Matrix(0, -1, -1, 0, height, width),
+            8 => new Matrix(0, -1, 1, 0, 0, width),
+            _ => Matrix.Identity,
+        };
     }
 }
